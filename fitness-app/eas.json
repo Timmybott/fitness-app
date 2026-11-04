@@ -7,15 +7,24 @@
     "development": {
       "developmentClient": true,
       "distribution": "internal",
-      "env": { "EXPO_PUBLIC_API_URL": "http://192.168.178.103:3000" }
+      "env": {
+        "EXPO_PUBLIC_API_URL": "http://192.168.178.103:3000"
+      },
+      "channel": "development"
     },
     "preview": {
       "distribution": "internal",
-      "env": { "EXPO_PUBLIC_API_URL": "http://192.168.178.103:3000" }
+      "env": {
+        "EXPO_PUBLIC_API_URL": "http://192.168.178.103:3000"
+      },
+      "channel": "preview"
     },
     "production": {
       "autoIncrement": true,
-      "env": { "EXPO_PUBLIC_API_URL": "http://192.168.178.103:3000" }
+      "env": {
+        "EXPO_PUBLIC_API_URL": "http://192.168.178.103:3000"
+      },
+      "channel": "production"
     }
   },
   "submit": {

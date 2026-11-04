@@ -16,6 +16,9 @@
         "NSAppTransportSecurity": {
           "NSAllowsLocalNetworking": true
         }
+      },
+      "runtimeVersion": {
+        "policy": "appVersion"
       }
     },
     "android": {
@@ -85,6 +88,14 @@
         "projectId": "f3acabfb-294a-474c-badc-83acbef6efe9"
       }
     },
-    "owner": "timmybott"
+    "owner": "timmybott",
+    "updates": {
+      "url": "https://u.expo.dev/f3acabfb-294a-474c-badc-83acbef6efe9",
+      "requestHeaders": {
+        "expo-channel-name": "production"
+      },
+      "checkAutomatically": "ON_LOAD",
+      "fallbackToCacheTimeout": 0
+    }
   }
 }
