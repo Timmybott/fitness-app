@@ -1,0 +1,70 @@
+# Builds the iOS app on a free GitHub macOS runner (no Mac or paid Apple account needed).
+# The result is an ad-hoc signed .ipa (entitlements like HealthKit embedded) that Sideloadly
+# re-signs with a free Apple ID on Windows.
+name: iOS Build
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['fitness-app/**', '.github/workflows/ios.yml']
+
+concurrency:
+  group: ios-build
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-26
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: fitness-app
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: fitness-app/package-lock.json
+
+      - run: xcodebuild -version
+
+      - run: npm ci
+
+      - name: Generate native iOS project
+        run: npx expo prebuild --platform ios --clean --no-install
+
+      - name: Install CocoaPods
+        run: cd ios && pod install
+
+      - name: Build (unsigned, Release with embedded JS bundle)
+        run: |
+          WORKSPACE=$(ls -d ios/*.xcworkspace)
+          SCHEME=$(basename "$WORKSPACE" .xcworkspace)
+          echo "SCHEME=$SCHEME" >> "$GITHUB_ENV"
+          xcodebuild -workspace "$WORKSPACE" -scheme "$SCHEME" -configuration Release \
+            -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO | tail -n 80
+          test -d "build/Build/Products/Release-iphoneos/$SCHEME.app"
+
+      - name: Ad-hoc sign with entitlements and package .ipa
+        run: |
+          APP="build/Build/Products/Release-iphoneos/$SCHEME.app"
+          ENT="ios/$SCHEME/$SCHEME.entitlements"
+          cat "$ENT"
+          if [ -d "$APP/Frameworks" ]; then
+            find "$APP/Frameworks" -maxdepth 1 \( -name '*.framework' -o -name '*.dylib' \) -exec codesign --force --sign - {} \;
+          fi
+          codesign --force --sign - --entitlements "$ENT" "$APP"
+          codesign -d --entitlements - "$APP"
+          mkdir Payload && cp -R "$APP" Payload/
+          zip -qry Fitness.ipa Payload
+          ls -lh Fitness.ipa
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Fitness-ipa
+          path: fitness-app/Fitness.ipa
+          retention-days: 30
