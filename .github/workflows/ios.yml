@@ -15,7 +15,8 @@ concurrency:
 
 jobs:
   build:
-    runs-on: macos-26
+    # macos-26 runners are often unavailable on the free tier; macos-15 ships Xcode 26 as well.
+    runs-on: macos-15
     timeout-minutes: 60
     defaults:
       run:
@@ -29,7 +30,13 @@ jobs:
           cache: npm
           cache-dependency-path: fitness-app/package-lock.json
 
-      - run: xcodebuild -version
+      # The iOS 26 SDK (Liquid Glass tab bar) needs Xcode 26; pick the newest one installed.
+      - name: Select Xcode 26
+        run: |
+          ls -d /Applications/Xcode*.app
+          XCODE=$(ls -d /Applications/Xcode_26*.app | sort -V | tail -n 1)
+          sudo xcode-select -s "$XCODE"
+          xcodebuild -version
 
       - run: npm ci
 
