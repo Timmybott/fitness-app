@@ -1,0 +1,13 @@
+# Quick check that hosted runners pick up jobs for this repo (manual trigger only).
+name: Runner check
+
+on:
+  workflow_dispatch:
+  push:
+    paths: ['.github/workflows/runner-check.yml']
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Linux runner OK"
