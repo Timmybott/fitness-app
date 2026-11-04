@@ -54,10 +54,18 @@ jobs:
           WORKSPACE=$(ls -d ios/*.xcworkspace)
           SCHEME=$(basename "$WORKSPACE" .xcworkspace)
           echo "SCHEME=$SCHEME" >> "$GITHUB_ENV"
-          xcodebuild -workspace "$WORKSPACE" -scheme "$SCHEME" -configuration Release \
+          # Full log goes to a file (uploaded on failure); only errors and the tail are printed.
+          if ! xcodebuild -workspace "$WORKSPACE" -scheme "$SCHEME" -configuration Release \
             -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build \
-            CODE_SIGNING_ALLOWED=NO | tail -n 80
-          test -d "build/Build/Products/Release-iphoneos/$SCHEME.app"
+            CODE_SIGNING_ALLOWED=NO > xcodebuild.log 2>&1; then
+            echo "::group::Errors"
+            grep -E "error:|fatal error|\*\* BUILD FAILED|The following build commands failed" -A3 xcodebuild.log | head -150
+            echo "::endgroup::"
+            tail -n 60 xcodebuild.log
+            exit 1
+          fi
+          tail -n 5 xcodebuild.log
+          test -f "build/Build/Products/Release-iphoneos/$SCHEME.app/Info.plist"
 
       - name: Ad-hoc sign with entitlements and package .ipa
         run: |
@@ -82,6 +90,13 @@ jobs:
           mkdir Payload && cp -R "$APP" Payload/
           zip -qry Fitness.ipa Payload
           ls -lh Fitness.ipa
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: xcodebuild-log
+          path: fitness-app/xcodebuild.log
+          if-no-files-found: ignore
 
       - uses: actions/upload-artifact@v4
         with:
