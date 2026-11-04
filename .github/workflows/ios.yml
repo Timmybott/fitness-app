@@ -8,10 +8,10 @@ on:
   workflow_dispatch:
     inputs:
       runner:
-        description: macOS runner (the Apple Silicon pool is often out of capacity on the free tier)
+        description: macOS runner. Expo SDK 58 needs Xcode newer than 26.3, which only macos-26 has.
         type: choice
-        default: macos-15-intel
-        options: [macos-15-intel, macos-15, macos-26]
+        default: macos-26
+        options: [macos-26, macos-15, macos-15-intel]
 
 concurrency:
   group: ios-build
@@ -19,7 +19,7 @@ concurrency:
 
 jobs:
   build:
-    runs-on: ${{ inputs.runner || 'macos-15-intel' }}
+    runs-on: ${{ inputs.runner || 'macos-26' }}
     timeout-minutes: 60
     defaults:
       run:
@@ -33,11 +33,11 @@ jobs:
           cache: npm
           cache-dependency-path: fitness-app/package-lock.json
 
-      # The iOS 26 SDK (Liquid Glass tab bar) needs Xcode 26; pick the newest one installed.
-      - name: Select Xcode 26
+      # Expo SDK 58 needs a recent Swift compiler (Xcode > 26.3); pick the newest stable Xcode installed.
+      - name: Select newest Xcode
         run: |
           ls -d /Applications/Xcode*.app
-          XCODE=$(ls -d /Applications/Xcode_26*.app | sort -V | tail -n 1)
+          XCODE=$(ls -d /Applications/Xcode_*.app | grep -v -i beta | sort -V | tail -n 1)
           sudo xcode-select -s "$XCODE"
           xcodebuild -version
 
