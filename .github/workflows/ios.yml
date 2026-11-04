@@ -22,9 +22,9 @@ jobs:
       run:
         working-directory: fitness-app
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
@@ -60,12 +60,22 @@ jobs:
         run: |
           APP="build/Build/Products/Release-iphoneos/$SCHEME.app"
           ENT="ios/$SCHEME/$SCHEME.entitlements"
+          EXE=$(plutil -extract CFBundleExecutable raw "$APP/Info.plist")
           cat "$ENT"
+          ls -la "$APP" | head -40
           if [ -d "$APP/Frameworks" ]; then
             find "$APP/Frameworks" -maxdepth 1 \( -name '*.framework' -o -name '*.dylib' \) -exec codesign --force --sign - {} \;
           fi
-          codesign --force --sign - --entitlements "$ENT" "$APP"
-          codesign -d --entitlements - "$APP"
+          # Sideloadly keeps the entitlements of the existing signature, so they must be embedded here.
+          # codesign can reject unsigned app bundles ("bundle format unrecognized"); ldid signs the
+          # executable directly and is the usual tool for sideloading.
+          if ! codesign --force --sign - --entitlements "$ENT" "$APP"; then
+            echo "codesign failed, falling back to ldid"
+            brew install ldid
+            ldid -S"$ENT" "$APP/$EXE"
+          fi
+          echo "Embedded entitlements:"
+          codesign -d --entitlements - "$APP/$EXE" || ldid -e "$APP/$EXE"
           mkdir Payload && cp -R "$APP" Payload/
           zip -qry Fitness.ipa Payload
           ls -lh Fitness.ipa
