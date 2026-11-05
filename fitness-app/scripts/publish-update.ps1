@@ -11,4 +11,4 @@ if (-not $token) {
 }
 $env:EXPO_TOKEN = $token
 Set-Location (Split-Path $PSScriptRoot -Parent)
-npx.cmd eas-cli@latest update --branch production --platform ios --message $Message --non-interactive
+npx.cmd eas-cli@latest update --branch production --platform ios --environment production --message $Message --non-interactive
