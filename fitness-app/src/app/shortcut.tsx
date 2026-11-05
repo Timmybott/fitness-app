@@ -65,7 +65,7 @@ export default function ShortcutScreen() {
       <Stack.Screen options={{ title: 'Apple Health' }} />
 
       <AppText color={Colors.textSecondary} style={styles.intro}>
-        Beim Öffnen der App kommen Schritte, Aktivkalorien, Trainingsminuten, Strecke und Gewicht aus Health. Um Mitternacht gehen
+        Beim Öffnen der App kommen Schritte, Aktivkalorien, Strecke, Stockwerke und Gewicht aus Health. Um Mitternacht gehen
         Ernährung, Gewicht und Workouts des Tages nach Health.
       </AppText>
 
@@ -75,7 +75,7 @@ export default function ShortcutScreen() {
             <>
               <Row
                 title={`${(last.steps ?? 0).toLocaleString('de-DE')} Schritte · ${formatNumber(last.distanceKm ?? 0)} km`}
-                subtitle={`${Math.round(last.activeKcal ?? 0)} kcal aktiv · ${Math.round(last.exerciseMin ?? 0)} min Training`}
+                subtitle={`${Math.round(last.activeKcal ?? 0)} kcal aktiv · ${last.flights ?? 0} Stockwerke`}
                 icon="figure.walk"
               />
               <Row

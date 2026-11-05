@@ -289,9 +289,8 @@ def build() -> dict:
     get_url((server_ref, '/health/sync'), 'POST', token_ref, {
         'weightKg': weight, 'weightDate': weight_date, 'flights': flights, 'flightsDate': flights_date,
     })
-    # Last and on its own: without an Apple Watch there may be no exercise minutes at all.
-    exercise, exercise_date = latest_with_date('Exercise Time', group_by_day=True)  # = exercise minutes
-    get_url((server_ref, '/health/sync'), 'POST', token_ref, {'exerciseMin': exercise, 'exerciseDate': exercise_date})
+    # Exercise minutes ('Exercise Time', the green ring) are left out: they come from an Apple Watch,
+    # the user has none, and the search failing showed an error on every run.
 
     return {
         'WFWorkflowActions': actions,
