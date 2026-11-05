@@ -53,11 +53,6 @@ export default function NutritionScreen() {
             onPress={() => router.push({ pathname: '/add-food', params: { date, meal: guessMeal(), manual: '1' } })}>
             Manuell eingeben
           </Stack.Toolbar.MenuAction>
-          <Stack.Toolbar.MenuAction
-            icon="drop.fill"
-            onPress={() => router.push({ pathname: '/add-food', params: { date, meal: 'snack', mode: 'drink' } })}>
-            Getränk
-          </Stack.Toolbar.MenuAction>
         </Stack.Toolbar.Menu>
       </Stack.Toolbar>
 
