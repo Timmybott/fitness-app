@@ -223,23 +223,8 @@ def build() -> dict:
         'WFItemSpecifier': 'Last Item', 'WFInput': attachment(out(cfg_parts, 'Geteilter Text'))}), 'Objekt aus Liste'))})
     server_ref, token_ref = named('server'), named('token')
 
-    # 1. Import from Health (hourly).
-    steps = today_sum('Steps')
-    active = today_sum('Active Calories')
-    exercise = today_sum('Exercise Minutes')
-    distance = today_sum('Walking + Running Distance')
-    flights = today_sum('Flights Climbed')
-    weight = find_health('Weight', today_only=False, latest=True)
-    get_url((server_ref, '/health/sync'), 'POST', token_ref, {
-        'steps': text(out(steps, 'Statistik')),
-        'activeKcal': text(out(active, 'Statistik')),
-        'exerciseMin': text(out(exercise, 'Statistik')),
-        'distanceKm': text(out(distance, 'Statistik')),
-        'flights': text(out(flights, 'Statistik')),
-        'weightKg': text(out(weight, 'Health-Messungen')),
-    })
-
-    # 2. Export to Health (finished days only, so effectively after midnight).
+    # 1. Export to Health (finished days only, so effectively after midnight). Runs first because
+    #    "Find Health Samples" aborts the whole shortcut when it finds nothing (e.g. no steps yet at 0:00).
     export = get_url((server_ref, '/health/export'), 'GET', token_ref)
     export_dict = add('detect.dictionary', {'WFInput': attachment(out(export, 'Inhalte von URL'))})
     add('setvariable', {'WFVariableName': 'export', 'WFInput': attachment(out(export_dict, 'Wörterbuch'))})
@@ -265,6 +250,19 @@ def build() -> dict:
 
     get_url((server_ref, '/health/export/ack'), 'POST', token_ref, {'ack': text(named('export', dict_key('ack', AS_TEXT)))})
     if_end(g_count)
+
+    # 2. Import from Health. Only types that practically always have data today: an empty search stops
+    #    the shortcut. Exercise minutes and flights return once empty results can be handled.
+    steps = today_sum('Steps')
+    active = today_sum('Active Calories')
+    distance = today_sum('Walking + Running Distance')
+    weight = find_health('Weight', today_only=False, latest=True)
+    get_url((server_ref, '/health/sync'), 'POST', token_ref, {
+        'steps': text(out(steps, 'Statistik')),
+        'activeKcal': text(out(active, 'Statistik')),
+        'distanceKm': text(out(distance, 'Statistik')),
+        'weightKg': text(out(weight, 'Health-Messungen')),
+    })
 
     return {
         'WFWorkflowActions': actions,
