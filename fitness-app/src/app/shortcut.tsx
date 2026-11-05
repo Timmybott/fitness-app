@@ -1,40 +1,42 @@
 import * as Haptics from 'expo-haptics';
 import { Stack } from 'expo-router';
 import { useState } from 'react';
-import { Alert, Share, StyleSheet, Text, View } from 'react-native';
+import { Alert, Linking, StyleSheet, View } from 'react-native';
 
 import { AppText } from '@/components/app-text';
 import { Card } from '@/components/card';
 import { List, PrimaryButton, Row } from '@/components/list';
 import { Screen, Section } from '@/components/screen';
-import { Colors, Fonts, Radius, Spacing } from '@/constants/theme';
+import { Colors, Spacing } from '@/constants/theme';
 import { api, API_URL, useApi } from '@/lib/api';
-import { type Activity } from '@/lib/health';
+import { formatNumber } from '@/lib/format';
+import { type HealthToday } from '@/lib/types';
 
-const STEPS = [
-  'Kurzbefehle-App → „+“ → neuer Kurzbefehl, Name: Fitness Sync.',
-  '„Health-Samples suchen“: Typ Schritte, Startdatum ist heute. Dann „Statistik berechnen“ → Summe.',
-  'Dasselbe für Typ Aktive Energie (wieder Summe).',
-  '„Health-Samples suchen“: Typ Gewicht, sortiert nach Startdatum, neueste zuerst, Limit 1.',
-  '„Inhalte von URL abrufen“: URL von unten, Methode POST, Header „Authorization“ mit „Bearer “ + Token, Haupttext JSON mit steps, activeKcal und weightKg aus den drei Ergebnissen.',
-  'Für kcal, protein, carbs und fat aus der Antwort: „Wörterbuchwert abrufen“, dann „Wenn größer als 0“ → „Health-Sample protokollieren“ (Nahrungsenergie, Protein, Kohlenhydrate, Fett gesamt).',
-  'Automationen: „App“ → Fitness wird geöffnet → Fitness Sync, „Sofort ausführen“. Zusätzlich „Tageszeit“ für feste Uhrzeiten.',
+const SHORTCUT_NAME = 'Fitness Sync';
+
+const AUTOMATIONS = [
+  'Kurzbefehle-App → Automation → „+“.',
+  '„Tageszeit“ → 0:00 Uhr, täglich → „Sofort ausführen“ → Kurzbefehl „Fitness Sync“.',
+  'Dasselbe für jede weitere Stunde, zu der du Daten willst (z. B. 7–23 Uhr).',
+  '„App“ → Fitness → „Wird geöffnet“ → „Sofort ausführen“ → „Fitness Sync“.',
 ];
 
 export default function ShortcutScreen() {
-  const [token, setToken] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const last = useApi<Activity & { updatedAt: string } | null>('/health/today').data;
-  const syncUrl = `${API_URL}/health/sync`;
+  const last = useApi<HealthToday | null>('/health/today').data;
 
-  const create = async () => {
+  const install = () => Linking.openURL(`${API_URL}/shortcut/fitness-sync.shortcut`);
+
+  // The app hands server address and a fresh shortcut-only token to the shortcut, which stores them.
+  const connect = async () => {
     setBusy(true);
     try {
-      const r = await api.post<{ token: string }>('/me/shortcut-token', {});
-      setToken(r.token);
+      const { token } = await api.post<{ token: string }>('/me/shortcut-token', {});
+      const text = `setup|${API_URL}|${token}`;
+      await Linking.openURL(`shortcuts://run-shortcut?name=${encodeURIComponent(SHORTCUT_NAME)}&input=text&text=${encodeURIComponent(text)}`);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch (e) {
-      Alert.alert('Fehler', (e as Error).message);
+      Alert.alert('Verbinden fehlgeschlagen', (e as Error).message);
     } finally {
       setBusy(false);
     }
@@ -42,48 +44,41 @@ export default function ShortcutScreen() {
 
   return (
     <Screen>
-      <Stack.Screen options={{ title: 'Health-Kurzbefehl' }} />
+      <Stack.Screen options={{ title: 'Apple Health' }} />
 
       <AppText color={Colors.textSecondary} style={styles.intro}>
-        Ein Kurzbefehl liest Schritte, Aktivkalorien und Gewicht aus Apple Health und schickt sie an deinen Server. Deine Mahlzeiten
-        trägt er nach Health ein, jeweils nur das Neue seit dem letzten Lauf.
+        Stündlich kommen Schritte, Aktivkalorien, Trainingsminuten, Strecke und Gewicht aus Health in die App. Um Mitternacht gehen
+        Ernährung, Gewicht und Workouts des Tages nach Health.
       </AppText>
 
-      <Section title="Letzter Sync">
+      <Section title="Letzter Abgleich">
         <List>
-          <Row
-            title={last ? `${(last.steps ?? 0).toLocaleString('de-DE')} Schritte · ${Math.round(last.activeKcal ?? 0)} kcal` : 'Heute noch nicht'}
-            subtitle={last ? `um ${new Date(last.updatedAt).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })} Uhr` : undefined}
-            icon="arrow.triangle.2.circlepath"
-          />
+          {last ? (
+            <>
+              <Row
+                title={`${(last.steps ?? 0).toLocaleString('de-DE')} Schritte · ${formatNumber(last.distanceKm ?? 0)} km`}
+                subtitle={`${Math.round(last.activeKcal ?? 0)} kcal aktiv · ${Math.round(last.exerciseMin ?? 0)} min Training`}
+                icon="figure.walk"
+              />
+              <Row
+                title="Zuletzt aktualisiert"
+                value={new Date(last.updatedAt).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}
+              />
+            </>
+          ) : (
+            <Row title="Heute noch kein Abgleich" icon="arrow.triangle.2.circlepath" />
+          )}
         </List>
       </Section>
 
-      <Section title="1. Token" footer="Der Token darf nur den Health-Sync aufrufen. Ein neuer Token macht den alten ungültig.">
-        {token ? (
-          <Card style={styles.tokenCard}>
-            <Text selectable style={styles.token}>
-              {token}
-            </Text>
-            <PrimaryButton title="Token kopieren / teilen" onPress={() => Share.share({ message: token })} />
-          </Card>
-        ) : (
-          <PrimaryButton title="Token erstellen" onPress={create} loading={busy} />
-        )}
+      <Section title="Einrichten" footer="„Verbinden“ öffnet kurz die Kurzbefehle-App und speichert dort deine Zugangsdaten. Beim ersten Lauf fragt iOS nach den Health-Zugriffen.">
+        <PrimaryButton title="1. Kurzbefehl laden" onPress={install} />
+        <PrimaryButton title="2. Verbinden" onPress={connect} loading={busy} />
       </Section>
 
-      <Section title="2. URL">
-        <Card style={styles.tokenCard}>
-          <Text selectable style={styles.token}>
-            {syncUrl}
-          </Text>
-          <PrimaryButton title="URL kopieren / teilen" onPress={() => Share.share({ message: syncUrl })} />
-        </Card>
-      </Section>
-
-      <Section title="3. Kurzbefehl bauen">
+      <Section title="3. Automationen (einmalig)" footer="Automationen kann keine App für dich anlegen, das lässt iOS nur in der Kurzbefehle-App zu.">
         <Card style={styles.steps}>
-          {STEPS.map((s, i) => (
+          {AUTOMATIONS.map((s, i) => (
             <View key={i} style={styles.step}>
               <AppText type="headline" color={Colors.accent} style={styles.stepNo}>
                 {i + 1}
@@ -100,15 +95,6 @@ export default function ShortcutScreen() {
 const styles = StyleSheet.create({
   flex: { flex: 1 },
   intro: { marginHorizontal: Spacing.two },
-  tokenCard: { gap: Spacing.three },
-  token: {
-    color: Colors.text,
-    fontFamily: Fonts.mono,
-    fontSize: 14,
-    backgroundColor: Colors.cardElevated,
-    padding: Spacing.three,
-    borderRadius: Radius.small,
-  },
   steps: { gap: Spacing.three },
   step: { flexDirection: 'row', gap: Spacing.three },
   stepNo: { width: 18 },

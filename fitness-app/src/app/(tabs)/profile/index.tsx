@@ -1,7 +1,7 @@
 import * as Haptics from 'expo-haptics';
 import { router, Stack } from 'expo-router';
 import { useState } from 'react';
-import { Alert, StyleSheet, Switch, TextInput, View } from 'react-native';
+import { Alert, StyleSheet, TextInput, View } from 'react-native';
 
 import { AppText } from '@/components/app-text';
 import { List, Row } from '@/components/list';
@@ -9,8 +9,7 @@ import { Screen, Section } from '@/components/screen';
 import { Colors, Spacing } from '@/constants/theme';
 import { api, API_URL, invalidate, useApi } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
-import { disableHealth, enableHealth, healthAvailable, useHealthEnabled } from '@/lib/health';
-import { type Goals } from '@/lib/types';
+import { type Goals, type HealthToday } from '@/lib/types';
 
 const FIELDS: { key: keyof Goals; label: string; unit: string; color: string }[] = [
   { key: 'kcal', label: 'Kalorien', unit: 'kcal', color: Colors.kcal },
@@ -65,39 +64,18 @@ export default function ProfileScreen() {
 }
 
 function HealthSection() {
-  const on = useHealthEnabled();
-  const available = healthAvailable();
-
-  const toggle = async (value: boolean) => {
-    if (!value) return disableHealth();
-    try {
-      await enableHealth();
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    } catch (e) {
-      const message = (e as Error).message;
-      // Free Apple IDs can't sign apps with the HealthKit entitlement.
-      if (message.toLowerCase().includes('entitlement')) {
-        Alert.alert('Direkt nicht möglich', 'Die direkte Health-Verbindung braucht einen bezahlten Apple-Developer-Account. Nutze stattdessen den Kurzbefehl.', [
-          { text: 'Später', style: 'cancel' },
-          { text: 'Kurzbefehl einrichten', onPress: () => router.push('/shortcut') },
-        ]);
-      } else {
-        Alert.alert('Apple Health', message);
-      }
-    }
-  };
-
+  const last = useApi<HealthToday | null>('/health/today').data;
   return (
-    <Section title="Apple Health" footer="Der Kurzbefehl überträgt Schritte, Aktivkalorien und Gewicht in die App und deine Mahlzeiten nach Health.">
+    <Section title="Apple Health">
       <List>
-        <Row title="Kurzbefehl einrichten" icon="heart.fill" iconColor="#FF2D55" chevron onPress={() => router.push('/shortcut')} />
-        {available && (
-          <Row
-            title="Direkt verbinden"
-            subtitle="Nur mit Apple-Developer-Account"
-            right={<Switch value={on} onValueChange={toggle} trackColor={{ true: Colors.accent }} />}
-          />
-        )}
+        <Row
+          title="Apple Health"
+          subtitle={last ? `Abgleich um ${new Date(last.updatedAt).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })} Uhr` : 'Kurzbefehl einrichten'}
+          icon="heart.fill"
+          iconColor="#FF2D55"
+          chevron
+          onPress={() => router.push('/shortcut')}
+        />
       </List>
     </Section>
   );

@@ -21,7 +21,7 @@ export default async function bodyRoutes(app) {
     async (req) => {
       await query(
         `INSERT INTO body_weights (user_id, date, kg) VALUES ($1, $2, $3)
-         ON CONFLICT (user_id, date) DO UPDATE SET kg = $3`,
+         ON CONFLICT (user_id, date) DO UPDATE SET kg = $3, source = 'app'`,
         [req.userId, req.body.date, req.body.kg],
       );
       return req.body;

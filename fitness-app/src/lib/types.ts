@@ -93,3 +93,13 @@ export function recipeToFood(r: Recipe): Food {
   const total = { name: r.name, grams: r.items.reduce((g, i) => g + i.grams, 0), ...sumMacros(r.items) };
   return portionToFood(total, Math.round(total.grams / r.servings));
 }
+
+/** Today's activity as last imported from Apple Health by the sync shortcut. */
+export type HealthToday = {
+  steps: number | null;
+  activeKcal: number | null;
+  exerciseMin: number | null;
+  distanceKm: number | null;
+  flights: number | null;
+  updatedAt: string;
+};
