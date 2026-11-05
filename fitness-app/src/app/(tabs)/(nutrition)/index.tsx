@@ -13,7 +13,7 @@ import { Screen } from '@/components/screen';
 import { Colors, Spacing } from '@/constants/theme';
 import { api, invalidate, useApi } from '@/lib/api';
 import { formatDateKey, shiftDateKey, toDateKey } from '@/lib/date';
-import { deleteEntryFromHealth, useTodayActivity } from '@/lib/health';
+import { deleteEntryFromHealth, useTodayActivity, type Activity } from '@/lib/health';
 import { MEALS, sumMacros, type Entry, type Goals, type Macros, type Meal } from '@/lib/types';
 
 export default function NutritionScreen() {
@@ -57,7 +57,10 @@ function guessMeal(): Meal {
 }
 
 function SummaryCard({ totals, goals, showActivity }: { totals: Macros; goals: Goals; showActivity: boolean }) {
-  const activity = useTodayActivity();
+  // Direct HealthKit when available, otherwise what the Shortcuts sync reported to the server.
+  const native = useTodayActivity();
+  const synced = useApi<Activity | null>(showActivity && !native ? '/health/today' : null).data;
+  const activity = native ?? synced;
   const remaining = Math.round(goals.kcal - totals.kcal);
   const over = remaining < 0;
 
@@ -86,7 +89,7 @@ function SummaryCard({ totals, goals, showActivity }: { totals: Macros; goals: G
           <View style={styles.activity}>
             <SymbolView name="flame.fill" size={13} tintColor={Colors.protein} />
             <AppText type="caption" color={Colors.textSecondary}>
-              {Math.round(activity.activeKcal)} kcal aktiv · {activity.steps.toLocaleString('de-DE')} Schritte
+              {Math.round(activity.activeKcal ?? 0)} kcal aktiv · {(activity.steps ?? 0).toLocaleString('de-DE')} Schritte
             </AppText>
           </View>
         )}

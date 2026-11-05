@@ -4,6 +4,7 @@ import { migrate, query } from './db.js';
 import aiRoutes from './routes/ai.js';
 import authRoutes from './routes/auth.js';
 import bodyRoutes from './routes/body.js';
+import healthRoutes from './routes/health.js';
 import nutritionRoutes from './routes/nutrition.js';
 import recipeRoutes from './routes/recipes.js';
 import trainingRoutes from './routes/training.js';
@@ -11,7 +12,7 @@ import trainingRoutes from './routes/training.js';
 const app = Fastify({
   logger: { level: 'info' },
   bodyLimit: 8 * 1024 * 1024, // room for photo uploads (AI analysis)
-  ajv: { customOptions: { removeAdditional: 'all', coerceTypes: true } },
+  ajv: { customOptions: { removeAdditional: 'all', coerceTypes: true, allowUnionTypes: true } },
 });
 
 // Fastify's default error responses expose internals; send short German messages instead.
@@ -33,6 +34,7 @@ await app.register(bodyRoutes);
 await app.register(trainingRoutes);
 await app.register(recipeRoutes);
 await app.register(aiRoutes);
+await app.register(healthRoutes);
 
 await migrate(app.log);
 await app.listen({ host: '0.0.0.0', port: Number(process.env.PORT ?? 3000) });

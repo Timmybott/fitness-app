@@ -171,7 +171,7 @@ export function deleteWorkoutFromHealth(syncId: string) {
   background((h) => deleteBySyncId(h, ['HKWorkoutTypeIdentifier'], syncId));
 }
 
-export type Activity = { steps: number; activeKcal: number };
+export type Activity = { steps: number | null; activeKcal: number | null };
 
 /** Today's steps and active calories from Health (Apple Watch / iPhone), refreshed every minute. */
 export function useTodayActivity(): Activity | null {

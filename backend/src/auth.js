@@ -4,7 +4,7 @@ import { promisify } from 'node:util';
 import { query } from './db.js';
 
 const scryptAsync = promisify(scrypt);
-const SESSION_DAYS = 180;
+const SESSION_DAYS = { app: 180, shortcut: 3650 };
 
 export async function hashPassword(password) {
   const salt = randomBytes(16);
@@ -20,11 +20,12 @@ export async function verifyPassword(password, stored) {
 
 const sha256 = (s) => createHash('sha256').update(s).digest('hex');
 
-export async function createSession(userId) {
+/** `kind: 'shortcut'` creates a long-lived token that only routes with `config.allowShortcut` accept. */
+export async function createSession(userId, kind = 'app') {
   const token = randomBytes(32).toString('base64url');
   await query(
-    `INSERT INTO sessions (token_hash, user_id, expires_at) VALUES ($1, $2, now() + interval '${SESSION_DAYS} days')`,
-    [sha256(token), userId],
+    `INSERT INTO sessions (token_hash, user_id, kind, expires_at) VALUES ($1, $2, $3, now() + interval '${SESSION_DAYS[kind]} days')`,
+    [sha256(token), userId, kind],
   );
   return token;
 }
@@ -43,10 +44,13 @@ export async function requireAuth(request, reply) {
   const token = bearer(request);
   if (!token) return reply.code(401).send({ error: 'Nicht angemeldet' });
   const { rows } = await query(
-    'SELECT user_id FROM sessions WHERE token_hash = $1 AND expires_at > now()',
+    'SELECT user_id, kind FROM sessions WHERE token_hash = $1 AND expires_at > now()',
     [sha256(token)],
   );
   if (!rows[0]) return reply.code(401).send({ error: 'Sitzung abgelaufen' });
+  if (rows[0].kind === 'shortcut' && !request.routeOptions.config?.allowShortcut) {
+    return reply.code(403).send({ error: 'Dieser Token ist nur für den Kurzbefehl gültig' });
+  }
   request.userId = rows[0].user_id;
   request.token = token;
 }

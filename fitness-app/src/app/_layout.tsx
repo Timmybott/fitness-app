@@ -49,6 +49,7 @@ function RootStack() {
         <Stack.Screen name="scan" options={{ presentation: 'fullScreenModal' }} />
         <Stack.Screen name="photo" options={{ presentation: 'modal', headerShown: true }} />
         <Stack.Screen name="recipe" options={{ presentation: 'modal', headerShown: true }} />
+        <Stack.Screen name="shortcut" options={{ presentation: 'modal', headerShown: true }} />
         <Stack.Screen name="workout" options={{ presentation: 'fullScreenModal', headerShown: true, gestureEnabled: false }} />
         <Stack.Screen name="template" options={{ presentation: 'modal', headerShown: true }} />
         <Stack.Screen name="workout-detail" options={{ presentation: 'modal', headerShown: true }} />

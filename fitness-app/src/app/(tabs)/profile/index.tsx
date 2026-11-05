@@ -1,5 +1,5 @@
 import * as Haptics from 'expo-haptics';
-import { Stack } from 'expo-router';
+import { router, Stack } from 'expo-router';
 import { useState } from 'react';
 import { Alert, StyleSheet, Switch, TextInput, View } from 'react-native';
 
@@ -74,25 +74,30 @@ function HealthSection() {
       await enableHealth();
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch (e) {
-      Alert.alert('Apple Health', (e as Error).message);
+      const message = (e as Error).message;
+      // Free Apple IDs can't sign apps with the HealthKit entitlement.
+      if (message.toLowerCase().includes('entitlement')) {
+        Alert.alert('Direkt nicht möglich', 'Die direkte Health-Verbindung braucht einen bezahlten Apple-Developer-Account. Nutze stattdessen den Kurzbefehl.', [
+          { text: 'Später', style: 'cancel' },
+          { text: 'Kurzbefehl einrichten', onPress: () => router.push('/shortcut') },
+        ]);
+      } else {
+        Alert.alert('Apple Health', message);
+      }
     }
   };
 
   return (
-    <Section
-      title="Apple Health"
-      footer={
-        available
-          ? 'Mahlzeiten, Gewicht und Workouts werden in Health gespeichert. Schritte, Aktivkalorien und Gewicht (z. B. von deiner Waage) werden gelesen.'
-          : 'Nur in der installierten App verfügbar, nicht in Expo Go.'
-      }>
+    <Section title="Apple Health" footer="Der Kurzbefehl überträgt Schritte, Aktivkalorien und Gewicht in die App und deine Mahlzeiten nach Health.">
       <List>
-        <Row
-          title="Mit Health synchronisieren"
-          icon="heart.fill"
-          iconColor="#FF2D55"
-          right={<Switch value={on} onValueChange={toggle} disabled={!available} trackColor={{ true: Colors.accent }} />}
-        />
+        <Row title="Kurzbefehl einrichten" icon="heart.fill" iconColor="#FF2D55" chevron onPress={() => router.push('/shortcut')} />
+        {available && (
+          <Row
+            title="Direkt verbinden"
+            subtitle="Nur mit Apple-Developer-Account"
+            right={<Switch value={on} onValueChange={toggle} trackColor={{ true: Colors.accent }} />}
+          />
+        )}
       </List>
     </Section>
   );
