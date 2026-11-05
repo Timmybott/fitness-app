@@ -23,8 +23,13 @@ export default function TemplateScreen() {
 }
 
 function TemplateForm({ template }: { template?: Template }) {
-  const [name, setName] = useState(template?.name ?? '');
-  const [exercises, setExercises] = useState<TemplateExercise[]>(template?.exercises ?? []);
+  // Opted out of the React Compiler: it dropped the optional chaining in these initial values
+  // ("Cannot read property 'exercises' of undefined" for a new template).
+  'use no memo';
+  const initialName = template ? template.name : '';
+  const initialExercises: TemplateExercise[] = template ? template.exercises : [];
+  const [name, setName] = useState(initialName);
+  const [exercises, setExercises] = useState<TemplateExercise[]>(initialExercises);
   const [saving, setSaving] = useState(false);
 
   const update = (i: number, patch: Partial<TemplateExercise>) =>

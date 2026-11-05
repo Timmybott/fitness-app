@@ -23,9 +23,13 @@ export default function RecipeScreen() {
 }
 
 function RecipeForm({ recipe, draft }: { recipe?: Recipe; draft: ReturnType<typeof bridge.takeRecipeDraft> }) {
-  const [name, setName] = useState(recipe?.name ?? draft?.name ?? '');
-  const [servings, setServings] = useState(recipe?.servings ?? draft?.servings ?? 1);
-  const [items, setItems] = useState<PortionItem[]>(recipe?.items ?? draft?.items ?? []);
+  // Opted out of the React Compiler: it dropped the optional chaining in these initial values
+  // ("Cannot read property 'items' of undefined" for a new recipe).
+  'use no memo';
+  const source = recipe ? recipe : draft ? draft : null;
+  const [name, setName] = useState(source ? source.name : '');
+  const [servings, setServings] = useState(source ? source.servings : 1);
+  const [items, setItems] = useState<PortionItem[]>(source ? source.items : []);
   const [saving, setSaving] = useState(false);
 
   const total = sumMacros(items);
