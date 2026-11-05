@@ -12,7 +12,7 @@ import trainingRoutes from './routes/training.js';
 const app = Fastify({
   logger: { level: 'info' },
   bodyLimit: 8 * 1024 * 1024, // room for photo uploads (AI analysis)
-  ajv: { customOptions: { removeAdditional: 'all', coerceTypes: true, allowUnionTypes: true } },
+  ajv: { customOptions: { removeAdditional: true, coerceTypes: true, allowUnionTypes: true } },
 });
 
 // Fastify's default error responses expose internals; send short German messages instead.
@@ -22,6 +22,23 @@ app.setErrorHandler((err, req, reply) => {
   req.log.error(err);
   return reply.code(500).send({ error: 'Serverfehler' });
 });
+
+// The app reports uncaught JS errors here so crashes on the phone show up in the server log.
+app.post(
+  '/client-error',
+  {
+    schema: {
+      body: {
+        type: 'object',
+        properties: { message: { type: 'string', maxLength: 2000 }, stack: { type: 'string', maxLength: 8000 }, fatal: { type: 'boolean' } },
+      },
+    },
+  },
+  async (req) => {
+    req.log.error({ clientError: req.body }, 'client error');
+    return { ok: true };
+  },
+);
 
 app.get('/health', async () => {
   await query('SELECT 1');

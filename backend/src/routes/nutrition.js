@@ -1,7 +1,9 @@
 import { requireAuth } from '../auth.js';
 import { query, transaction } from '../db.js';
 
-const DEFAULT_GOALS = { kcal: 2500, protein: 160, carbs: 280, fat: 80 };
+const DEFAULT_GOALS = { kcal: 2500, protein: 160, carbs: 280, fat: 80, waterMl: 2500, addBurned: false };
+// "Today" for the user (the server runs on UTC).
+const LOCAL_TODAY = "(now() AT TIME ZONE 'Europe/Berlin')::date";
 const date = { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$' };
 const nonNeg = { type: 'number', minimum: 0, maximum: 100000 };
 
@@ -100,7 +102,10 @@ export default async function nutritionRoutes(app) {
   });
 
   app.get('/goals', async (req) => {
-    const { rows } = await query('SELECT kcal, protein, carbs, fat FROM goals WHERE user_id = $1', [req.userId]);
+    const { rows } = await query(
+      'SELECT kcal, protein, carbs, fat, water_ml AS "waterMl", add_burned AS "addBurned" FROM goals WHERE user_id = $1',
+      [req.userId],
+    );
     return rows[0] ?? DEFAULT_GOALS;
   });
 
@@ -111,30 +116,80 @@ export default async function nutritionRoutes(app) {
         body: {
           type: 'object',
           required: ['kcal', 'protein', 'carbs', 'fat'],
-          properties: { kcal: { type: 'integer', minimum: 0, maximum: 20000 }, protein: { type: 'integer', minimum: 0 }, carbs: { type: 'integer', minimum: 0 }, fat: { type: 'integer', minimum: 0 } },
+          properties: {
+            kcal: { type: 'integer', minimum: 0, maximum: 20000 },
+            protein: { type: 'integer', minimum: 0 },
+            carbs: { type: 'integer', minimum: 0 },
+            fat: { type: 'integer', minimum: 0 },
+            waterMl: { type: 'integer', minimum: 0, maximum: 20000, default: DEFAULT_GOALS.waterMl },
+            addBurned: { type: 'boolean', default: false },
+          },
         },
       },
     },
     async (req) => {
-      const { kcal, protein, carbs, fat } = req.body;
+      const { kcal, protein, carbs, fat, waterMl, addBurned } = req.body;
       await query(
-        `INSERT INTO goals (user_id, kcal, protein, carbs, fat) VALUES ($1, $2, $3, $4, $5)
-         ON CONFLICT (user_id) DO UPDATE SET kcal = $2, protein = $3, carbs = $4, fat = $5`,
-        [req.userId, kcal, protein, carbs, fat],
+        `INSERT INTO goals (user_id, kcal, protein, carbs, fat, water_ml, add_burned) VALUES ($1, $2, $3, $4, $5, $6, $7)
+         ON CONFLICT (user_id) DO UPDATE SET kcal = $2, protein = $3, carbs = $4, fat = $5, water_ml = $6, add_burned = $7`,
+        [req.userId, kcal, protein, carbs, fat, waterMl, addBurned],
       );
       return req.body;
     },
   );
 
-  // Daily calorie totals for the last N days (for stats).
+  // Every day of the last N days with nutrition, water and activity totals (for stats).
   app.get('/nutrition/daily', async (req) => {
     const days = Math.min(365, Math.max(1, parseInt(req.query.days, 10) || 30));
     const { rows } = await query(
-      `SELECT date, SUM(kcal) AS kcal, SUM(protein) AS protein, SUM(carbs) AS carbs, SUM(fat) AS fat
-       FROM entries WHERE user_id = $1 AND date > CURRENT_DATE - $2::int
-       GROUP BY date ORDER BY date`,
+      `WITH d AS (
+         SELECT generate_series(${LOCAL_TODAY} - ($2::int - 1), ${LOCAL_TODAY}, interval '1 day')::date AS date
+       )
+       SELECT d.date::text AS date,
+         COALESCE(e.kcal, 0) AS kcal, COALESCE(e.protein, 0) AS protein, COALESCE(e.carbs, 0) AS carbs, COALESCE(e.fat, 0) AS fat,
+         COALESCE(e.n, 0)::int AS "entryCount", COALESCE(w.ml, 0)::int AS "waterMl",
+         h.steps, h.active_kcal AS "activeKcal", h.distance_km AS "distanceKm", h.flights
+       FROM d
+       LEFT JOIN (SELECT date, SUM(kcal) kcal, SUM(protein) protein, SUM(carbs) carbs, SUM(fat) fat, COUNT(*) n
+                  FROM entries WHERE user_id = $1 GROUP BY date) e ON e.date = d.date
+       LEFT JOIN (SELECT date, SUM(ml) ml FROM water_entries WHERE user_id = $1 GROUP BY date) w ON w.date = d.date
+       LEFT JOIN health_daily h ON h.user_id = $1 AND h.date = d.date
+       ORDER BY d.date`,
       [req.userId, days],
     );
     return rows;
+  });
+
+  app.get('/water', { schema: { querystring: { type: 'object', required: ['date'], properties: { date } } } }, async (req) => {
+    const { rows } = await query(
+      'SELECT id, ml, name, created_at AS "createdAt" FROM water_entries WHERE user_id = $1 AND date = $2 ORDER BY created_at',
+      [req.userId, req.query.date],
+    );
+    return { totalMl: rows.reduce((t, r) => t + r.ml, 0), entries: rows };
+  });
+
+  app.post(
+    '/water',
+    {
+      schema: {
+        body: {
+          type: 'object',
+          required: ['date', 'ml'],
+          properties: { date, ml: { type: 'integer', minimum: 1, maximum: 5000 }, name: { type: ['string', 'null'], maxLength: 100 } },
+        },
+      },
+    },
+    async (req) => {
+      const { rows } = await query(
+        'INSERT INTO water_entries (user_id, date, ml, name) VALUES ($1, $2, $3, $4) RETURNING id, ml, name',
+        [req.userId, req.body.date, req.body.ml, req.body.name ?? null],
+      );
+      return rows[0];
+    },
+  );
+
+  app.delete('/water/:id', async (req) => {
+    await query('DELETE FROM water_entries WHERE id = $1 AND user_id = $2', [req.params.id, req.userId]);
+    return { ok: true };
   });
 }
