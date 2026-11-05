@@ -171,9 +171,14 @@ def find_health(sample_type: str, today_only: bool = True, latest: bool = False)
     return add('filter.health.quantity', params)
 
 
+def sample_value() -> list:
+    """'Health Samples → Value': the plain number of each sample (statistics on the samples themselves is empty)."""
+    return [{'Type': 'WFPropertyVariableAggrandizement', 'PropertyName': 'Value', 'PropertyUserInfo': 0}]
+
+
 def today_sum(sample_type: str) -> dict:
     samples = find_health(sample_type)
-    return add('statistics', {'WFStatisticsOperation': 'Sum', 'WFInput': attachment(out(samples, 'Health-Messungen'))})
+    return add('statistics', {'WFStatisticsOperation': 'Sum', 'WFInput': attachment(out(samples, 'Health-Messungen', sample_value()))})
 
 
 def log_sample(sample_type: str, unit: str, item: str) -> None:
@@ -261,7 +266,7 @@ def build() -> dict:
         'steps': text(out(steps, 'Statistik')),
         'activeKcal': text(out(active, 'Statistik')),
         'distanceKm': text(out(distance, 'Statistik')),
-        'weightKg': text(out(weight, 'Health-Messungen')),
+        'weightKg': text(out(weight, 'Health-Messungen', sample_value())),
     })
 
     exercise = today_sum('Exercise Time')  # Shortcuts' name for exercise minutes (from the user's iPhone)
