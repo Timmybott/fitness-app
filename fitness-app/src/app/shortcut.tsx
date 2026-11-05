@@ -1,7 +1,8 @@
+import { File, Paths } from 'expo-file-system';
 import * as Haptics from 'expo-haptics';
 import { Stack } from 'expo-router';
 import { useState } from 'react';
-import { Alert, Linking, StyleSheet, View } from 'react-native';
+import { Alert, Linking, Share, StyleSheet, View } from 'react-native';
 
 import { AppText } from '@/components/app-text';
 import { Card } from '@/components/card';
@@ -25,11 +26,18 @@ export default function ShortcutScreen() {
   const [busy, setBusy] = useState(false);
   const last = useApi<HealthToday | null>('/health/today').data;
 
-  // Hands the file URL straight to the Shortcuts app (Safari would only download it to Files).
-  const install = () =>
-    Linking.openURL(
-      `shortcuts://import-shortcut?url=${encodeURIComponent(`${API_URL}/shortcut/fitness-sync.shortcut`)}&name=${encodeURIComponent(SHORTCUT_NAME)}`,
-    );
+  // Shortcuts' import-shortcut URL rejects plain-http addresses and Safari only saves the file to Files,
+  // so the app downloads it and offers it in the share sheet, where "Shortcuts" imports it directly.
+  const install = async () => {
+    try {
+      const file = await File.downloadFileAsync(`${API_URL}/shortcut/fitness-sync.shortcut`, new File(Paths.cache, `${SHORTCUT_NAME}.shortcut`), {
+        idempotent: true,
+      });
+      await Share.share({ url: file.uri });
+    } catch (e) {
+      Alert.alert('Laden fehlgeschlagen', (e as Error).message);
+    }
+  };
 
   // The app hands server address and a fresh shortcut-only token to the shortcut, which stores them.
   const connect = async () => {
@@ -75,7 +83,9 @@ export default function ShortcutScreen() {
         </List>
       </Section>
 
-      <Section title="Einrichten" footer="„Verbinden“ öffnet kurz die Kurzbefehle-App und speichert dort deine Zugangsdaten. Beim ersten Lauf fragt iOS nach den Health-Zugriffen.">
+      <Section
+        title="Einrichten"
+        footer="Bei „Kurzbefehl laden“ im Teilen-Menü „Kurzbefehle“ wählen. „Verbinden“ öffnet danach kurz die Kurzbefehle-App und speichert dort deine Zugangsdaten.">
         <PrimaryButton title="1. Kurzbefehl laden" onPress={install} />
         <PrimaryButton title="2. Verbinden" onPress={connect} loading={busy} />
       </Section>
