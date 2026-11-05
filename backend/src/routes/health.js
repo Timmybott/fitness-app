@@ -36,13 +36,20 @@ export function lenientNumber(v) {
 const lenient = { type: ['number', 'string', 'null'] };
 const round1 = (n) => Math.round(n * 10) / 10;
 
-// Health type names as the shortcut's "Log Health Sample" actions expect them.
-const NUTRITION_TYPES = [
-  ['kcal', 'Nahrungsenergie', 'kcal'],
-  ['protein', 'Protein', 'g'],
-  ['carbs', 'Kohlenhydrate', 'g'],
-  ['fat', 'Fett gesamt', 'g'],
-];
+// Sample keys the shortcut maps to its "Log Health Sample" actions.
+const NUTRITION_KEYS = ['kcal', 'protein', 'carbs', 'fat'];
+
+// Shortcuts' (English) workout type names for "Log Workout".
+const WORKOUT_TYPES = {
+  Krafttraining: 'Traditional Strength Training',
+  Laufen: 'Running',
+  Radfahren: 'Cycling',
+  Gehen: 'Walking',
+  Schwimmen: 'Swimming',
+  Rudern: 'Rowing',
+  Crosstrainer: 'Elliptical',
+  Seilspringen: 'Jump Rope',
+};
 
 export default async function healthRoutes(app) {
   // The signed shortcut is the same for everyone (no secrets inside), so it is public.
@@ -138,11 +145,11 @@ export default async function healthRoutes(app) {
             [req.userId, date],
           )
         ).rows[0];
-        for (const [key, type, unit] of NUTRITION_TYPES) {
-          if (n[key] > 0) samples.push({ type, unit, value: Math.round(n[key]), date: at });
+        for (const key of NUTRITION_KEYS) {
+          if (n[key] > 0) samples.push({ key, value: Math.round(n[key]), date: at });
         }
         const w = (await query("SELECT kg FROM body_weights WHERE user_id = $1 AND date = $2 AND source = 'app'", [req.userId, date])).rows[0];
-        if (w) samples.push({ type: 'Gewicht', unit: 'kg', value: w.kg, date: at });
+        if (w) samples.push({ key: 'weight', value: w.kg, date: at });
       }
 
       const strength = (
@@ -165,6 +172,7 @@ export default async function healthRoutes(app) {
       const workouts = [
         ...strength.map((w) => ({
           type: 'Krafttraining',
+          hkType: WORKOUT_TYPES.Krafttraining,
           start: w.start.toISOString(),
           end: w.end.toISOString(),
           minutes: Math.max(1, Math.round((w.end - w.start) / 60000)),
@@ -173,6 +181,7 @@ export default async function healthRoutes(app) {
         })),
         ...cardio.map((c) => ({
           type: c.type,
+          hkType: WORKOUT_TYPES[c.type] ?? 'Other',
           start: new Date(c.end.getTime() - c.minutes * 60000).toISOString(),
           end: c.end.toISOString(),
           minutes: Math.round(c.minutes),
