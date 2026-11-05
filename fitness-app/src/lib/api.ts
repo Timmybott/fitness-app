@@ -1,4 +1,5 @@
 import { useEffect, useState, useSyncExternalStore } from 'react';
+import { AppState } from 'react-native';
 
 export const API_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://192.168.178.103:3000';
 
@@ -62,6 +63,23 @@ function subscribe(l: () => void) {
   listeners.add(l);
   return () => listeners.delete(l);
 }
+
+// Opening the app triggers the "app opened" automation, which runs the Health sync shortcut in the
+// background. Refetch right away and again once the shortcut has had time to post fresh numbers.
+const FOLLOW_UP_MS = [4000, 10000, 20000];
+let refreshTimers: ReturnType<typeof setTimeout>[] = [];
+
+function refreshAfterOpen() {
+  refreshTimers.forEach(clearTimeout);
+  refreshTimers = FOLLOW_UP_MS.map((ms) => setTimeout(invalidate, ms));
+}
+
+AppState.addEventListener('change', (state) => {
+  if (state !== 'active') return;
+  invalidate();
+  refreshAfterOpen();
+});
+refreshAfterOpen(); // cold start: the initial fetch happens on mount, follow-ups catch the sync
 
 type QueryState<T> = { data?: T; error?: string; loading: boolean };
 

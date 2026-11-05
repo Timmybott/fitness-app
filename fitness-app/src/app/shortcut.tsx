@@ -17,9 +17,9 @@ const SHORTCUT_NAME = 'Fitness Sync';
 
 const AUTOMATIONS = [
   'Kurzbefehle-App → Automation → „+“.',
-  '„Tageszeit“ → 0:00 Uhr, täglich → „Sofort ausführen“ → Kurzbefehl „Fitness Sync“.',
-  'Dasselbe für jede weitere Stunde, zu der du Daten willst (z. B. 7–23 Uhr).',
-  '„App“ → Fitness → „Wird geöffnet“ → „Sofort ausführen“ → „Fitness Sync“.',
+  '„App“ → Fitness → „Wird geöffnet“ → „Sofort ausführen“ → „Fitness Sync“. Damit sind Schritte & Co. beim Öffnen aktuell.',
+  '„Tageszeit“ → 0:00 Uhr, täglich → „Sofort ausführen“ → „Fitness Sync“. Damit gehen Gewicht, Ernährung und Workouts des Tages nach Health.',
+  'Optional: weitere Uhrzeiten, falls die Zahlen auch ohne Öffnen der App aktuell sein sollen.',
 ];
 
 export default function ShortcutScreen() {
@@ -59,7 +59,7 @@ export default function ShortcutScreen() {
       <Stack.Screen options={{ title: 'Apple Health' }} />
 
       <AppText color={Colors.textSecondary} style={styles.intro}>
-        Stündlich kommen Schritte, Aktivkalorien, Trainingsminuten, Strecke und Gewicht aus Health in die App. Um Mitternacht gehen
+        Beim Öffnen der App kommen Schritte, Aktivkalorien, Trainingsminuten, Strecke und Gewicht aus Health. Um Mitternacht gehen
         Ernährung, Gewicht und Workouts des Tages nach Health.
       </AppText>
 
