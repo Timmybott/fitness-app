@@ -39,6 +39,12 @@ export default function ShortcutScreen() {
     }
   };
 
+  // Runs the sync now; x-success brings the user back, and returning to the app refetches the data.
+  const syncNow = () =>
+    Linking.openURL(
+      `shortcuts://x-callback-url/run-shortcut?name=${encodeURIComponent(SHORTCUT_NAME)}&x-success=${encodeURIComponent('fitnessapp://shortcut')}`,
+    ).catch((e: Error) => Alert.alert('Abgleich fehlgeschlagen', e.message));
+
   // The app hands server address and a fresh shortcut-only token to the shortcut, which stores them.
   const connect = async () => {
     setBusy(true);
@@ -81,6 +87,7 @@ export default function ShortcutScreen() {
             <Row title="Heute noch kein Abgleich" icon="arrow.triangle.2.circlepath" />
           )}
         </List>
+        <PrimaryButton title="Jetzt abgleichen" onPress={syncNow} />
       </Section>
 
       <Section
