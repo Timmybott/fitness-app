@@ -171,14 +171,13 @@ def find_health(sample_type: str, today_only: bool = True, latest: bool = False)
     return add('filter.health.quantity', params)
 
 
-def sample_value() -> list:
-    """'Health Samples → Value': the plain number of each sample (statistics on the samples themselves is empty)."""
-    return [{'Type': 'WFPropertyVariableAggrandizement', 'PropertyName': 'Value', 'PropertyUserInfo': 0}]
+def today_values(sample_type: str) -> dict:
+    """Today's samples grouped by day, inserted into the JSON body as text.
 
-
-def today_sum(sample_type: str) -> dict:
-    samples = find_health(sample_type)
-    return add('statistics', {'WFStatisticsOperation': 'Sum', 'WFInput': attachment(out(samples, 'Health-Messungen', sample_value()))})
+    Verified on the user's iPhone: this arrives as one value per line ("5185\\n0"), which the server
+    sums. "Calculate Statistics" on these samples produced an empty value, so it isn't used.
+    """
+    return text(out(find_health(sample_type), 'Health-Messungen'))
 
 
 def log_sample(sample_type: str, unit: str, item: str) -> None:
@@ -258,23 +257,18 @@ def build() -> dict:
 
     # 2. Import from Health. An empty search stops the shortcut, so the types that practically always
     #    have data are sent first; exercise time and flights (often 0) follow in a second request.
-    steps = today_sum('Steps')
-    active = today_sum('Active Calories')
-    distance = today_sum('Walking + Running Distance')
-    weight = find_health('Weight', today_only=False, latest=True)
     get_url((server_ref, '/health/sync'), 'POST', token_ref, {
-        'steps': text(out(steps, 'Statistik')),
-        'activeKcal': text(out(active, 'Statistik')),
-        'distanceKm': text(out(distance, 'Statistik')),
-        'weightKg': text(out(weight, 'Health-Messungen', sample_value())),
+        'steps': today_values('Steps'),
+        'activeKcal': today_values('Active Calories'),
+        'distanceKm': today_values('Walking + Running Distance'),
     })
 
-    exercise = today_sum('Exercise Time')  # Shortcuts' name for exercise minutes (from the user's iPhone)
-    flights = today_sum('Flights Climbed')
+    # Often empty on a given day (no workout, no stairs, not weighed): last, so they can't block the rest.
     get_url((server_ref, '/health/sync'), 'POST', token_ref, {
-        'exerciseMin': text(out(exercise, 'Statistik')),
-        'flights': text(out(flights, 'Statistik')),
+        'exerciseMin': today_values('Exercise Time'),  # Shortcuts' name for exercise minutes
+        'flights': today_values('Flights Climbed'),
     })
+    get_url((server_ref, '/health/sync'), 'POST', token_ref, {'weightKg': today_values('Weight')})
 
     return {
         'WFWorkflowActions': actions,

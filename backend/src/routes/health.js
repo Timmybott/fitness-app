@@ -33,6 +33,19 @@ export function lenientNumber(v) {
   return m ? parseFloat(m[0]) : null;
 }
 
+/** "Find Health Samples" grouped by day arrives as one value per line, e.g. "5185\n0": sum them. */
+function lenientSum(v) {
+  if (typeof v !== 'string') return lenientNumber(v);
+  const nums = v.split(/\r?\n/).map(lenientNumber).filter((n) => n != null);
+  return nums.length ? nums.reduce((a, n) => a + n, 0) : null;
+}
+
+/** For averages like weight: the first non-zero line. */
+function lenientFirst(v) {
+  if (typeof v !== 'string') return lenientNumber(v);
+  return v.split(/\r?\n/).map(lenientNumber).find((n) => n != null && n !== 0) ?? null;
+}
+
 const lenient = { type: ['number', 'string', 'null'] };
 const round1 = (n) => Math.round(n * 10) / 10;
 
@@ -86,13 +99,13 @@ export default async function healthRoutes(app) {
         const date = today();
         const b = req.body ?? {};
         const v = {
-          steps: lenientNumber(b.steps),
-          activeKcal: lenientNumber(b.activeKcal),
-          exerciseMin: lenientNumber(b.exerciseMin),
-          distanceKm: lenientNumber(b.distanceKm),
-          flights: lenientNumber(b.flights),
+          steps: lenientSum(b.steps),
+          activeKcal: lenientSum(b.activeKcal),
+          exerciseMin: lenientSum(b.exerciseMin),
+          distanceKm: lenientSum(b.distanceKm),
+          flights: lenientSum(b.flights),
         };
-        const weightKg = lenientNumber(b.weightKg);
+        const weightKg = lenientFirst(b.weightKg);
 
         await query(
           `INSERT INTO health_daily (user_id, date, steps, active_kcal, exercise_min, distance_km, flights)
