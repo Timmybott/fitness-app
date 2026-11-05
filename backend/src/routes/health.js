@@ -40,6 +40,32 @@ function lenientSum(v) {
   return nums.length ? nums.reduce((a, n) => a + n, 0) : null;
 }
 
+const MONTHS = { jan: 1, feb: 2, mär: 3, mar: 3, apr: 4, mai: 5, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, okt: 10, oct: 10, nov: 11, dez: 12, dec: 12 };
+
+/**
+ * A date as Shortcuts writes it into text ("05.11.2026, 17:50", "5. Nov. 2026 um 17:50", ISO, ...)
+ * to 'YYYY-MM-DD', or null if it can't be read.
+ */
+export function parseShortcutDate(v) {
+  if (v == null) return null;
+  const s = String(v).split(/\r?\n/)[0].trim();
+  const pad = (n) => String(n).padStart(2, '0');
+  const year = (y) => (y.length === 2 ? `20${y}` : y);
+  if (/heute|today/i.test(s)) return today();
+  if (/gestern|yesterday/i.test(s)) {
+    const d = new Date(`${today()}T12:00:00Z`);
+    d.setUTCDate(d.getUTCDate() - 1);
+    return d.toISOString().slice(0, 10);
+  }
+  let m = s.match(/(\d{4})-(\d{2})-(\d{2})/);
+  if (m) return `${m[1]}-${m[2]}-${m[3]}`;
+  m = s.match(/(\d{1,2})\.(\d{1,2})\.(\d{2,4})/);
+  if (m) return `${year(m[3])}-${pad(m[2])}-${pad(m[1])}`;
+  m = s.match(/(\d{1,2})\.?\s*([A-Za-zÄÖÜäöü]{3})[a-zäöü]*\.?\s*(\d{4})/);
+  if (m && MONTHS[m[2].toLowerCase()]) return `${m[3]}-${pad(MONTHS[m[2].toLowerCase()])}-${pad(m[1])}`;
+  return null;
+}
+
 /** For averages like weight: the first non-zero line. */
 function lenientFirst(v) {
   if (typeof v !== 'string') return lenientNumber(v);
@@ -91,21 +117,38 @@ export default async function healthRoutes(app) {
         schema: {
           body: {
             type: 'object',
-            properties: { steps: lenient, activeKcal: lenient, exerciseMin: lenient, distanceKm: lenient, flights: lenient, weightKg: lenient },
+            properties: {
+              steps: lenient,
+              activeKcal: lenient,
+              exerciseMin: lenient,
+              distanceKm: lenient,
+              flights: lenient,
+              weightKg: lenient,
+              // Start dates of the latest sample/day, for types that are searched as "newest" instead of "today".
+              exerciseDate: lenient,
+              flightsDate: lenient,
+              weightDate: lenient,
+            },
           },
         },
       },
       async (req) => {
         const date = today();
         const b = req.body ?? {};
+        // Latest-day values only count for today; an older day means nothing yet today (0).
+        const todayOnly = (value, sampleDate) => {
+          if (value == null || sampleDate === undefined) return value;
+          return parseShortcutDate(sampleDate) === date ? value : 0;
+        };
         const v = {
           steps: lenientSum(b.steps),
           activeKcal: lenientSum(b.activeKcal),
-          exerciseMin: lenientSum(b.exerciseMin),
+          exerciseMin: todayOnly(lenientSum(b.exerciseMin), b.exerciseDate),
           distanceKm: lenientSum(b.distanceKm),
-          flights: lenientSum(b.flights),
+          flights: todayOnly(lenientSum(b.flights), b.flightsDate),
         };
         const weightKg = lenientFirst(b.weightKg);
+        const weightDate = b.weightDate !== undefined ? (parseShortcutDate(b.weightDate) ?? date) : date;
 
         await query(
           `INSERT INTO health_daily (user_id, date, steps, active_kcal, exercise_min, distance_km, flights)
@@ -119,12 +162,12 @@ export default async function healthRoutes(app) {
              updated_at = now()`,
           [req.userId, date, v.steps != null ? Math.round(v.steps) : null, v.activeKcal, v.exerciseMin, v.distanceKm, v.flights != null ? Math.round(v.flights) : null],
         );
-        // A weight entered in the app today wins over the one read from Health.
+        // Stored on the day it was measured. A weight entered in the app that day wins over Health's.
         if (weightKg != null && weightKg >= 20 && weightKg <= 400) {
           await query(
             `INSERT INTO body_weights (user_id, date, kg, source) VALUES ($1, $2, $3, 'health')
              ON CONFLICT (user_id, date) DO UPDATE SET kg = EXCLUDED.kg WHERE body_weights.source = 'health'`,
-            [req.userId, date, round1(weightKg)],
+            [req.userId, weightDate, round1(weightKg)],
           );
         }
         return { ok: true };

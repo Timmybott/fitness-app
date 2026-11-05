@@ -151,11 +151,22 @@ IS, BEGINS_WITH, GREATER_THAN = 4, 8, 2
 
 # --- Health ---------------------------------------------------------------------------------------
 
-def find_health(sample_type: str, today_only: bool = True, latest: bool = False) -> dict:
+LATEST_WINDOW_DAYS = 3650  # "newest sample" searches look back 10 years, so they practically never come up empty
+
+
+def find_health(sample_type: str, latest: bool = False, group_by_day: bool = True) -> dict:
+    """Find Health Samples, in the shapes recorded on the user's iPhone (iOS 27).
+
+    The Start Date filter is mandatory. Operators: 1002 = "is today", 1001 = "is in the last <n> days"
+    (Unit 16 = days). latest=True: newest sample in the last 10 years, sorted newest first, limit 1.
+    An empty result stops the whole shortcut, which is why optional types use latest=True.
+    """
     templates = [{'Bounded': True, 'Operator': 4, 'Property': 'Type', 'Removable': False,
                   'Values': {'Enumeration': {'Value': sample_type, 'WFSerializationType': 'WFStringSubstitutableState'}}}]
-    if today_only:
-        # 1002 = "is today" (Unit/Number are what Shortcuts itself stores alongside it)
+    if latest:
+        templates.append({'Bounded': True, 'Operator': 1001, 'Property': 'Start Date', 'Removable': False,
+                          'Values': {'Unit': 16, 'Number': str(LATEST_WINDOW_DAYS)}})
+    else:
         templates.append({'Bounded': True, 'Operator': 1002, 'Property': 'Start Date', 'Removable': False,
                           'Values': {'Unit': 16, 'Number': '7'}})
     params = {'WFContentItemFilter': {
@@ -165,10 +176,18 @@ def find_health(sample_type: str, today_only: bool = True, latest: bool = False)
     if latest:
         params.update({'WFContentItemSortProperty': 'Start Date', 'WFContentItemSortOrder': 'Latest First',
                        'WFContentItemLimitEnabled': True, 'WFContentItemLimitNumber': 1.0})
-    else:
+    if group_by_day:
         # One deduplicated total per day (iPhone + Watch samples would otherwise be counted twice).
         params['WFHKSampleFilteringGroupBy'] = 'Day'
     return add('filter.health.quantity', params)
+
+
+def latest_with_date(sample_type: str, group_by_day: bool) -> tuple[dict, dict]:
+    """Newest sample (or newest day's total) and its start date, both as text for the JSON body."""
+    samples = find_health(sample_type, latest=True, group_by_day=group_by_day)
+    start = add('properties.health.quantity', {'WFInput': attachment(out(samples, 'Health-Messungen')),
+                                               'WFContentItemPropertyName': 'Start Date'})
+    return text(out(samples, 'Health-Messungen')), text(out(start, 'Startdatum'))
 
 
 def today_values(sample_type: str) -> dict:
@@ -255,19 +274,24 @@ def build() -> dict:
     get_url((server_ref, '/health/export/ack'), 'POST', token_ref, {'ack': text(named('export', dict_key('ack', AS_TEXT)))})
     if_end(g_count)
 
-    # 2. Import from Health. An empty search stops the shortcut, so the types that practically always
-    #    have data are sent first; exercise time and flights (often 0) follow in a second request.
+    # 2. Import from Health: today's totals of types that always have data today.
     get_url((server_ref, '/health/sync'), 'POST', token_ref, {
         'steps': today_values('Steps'),
         'activeKcal': today_values('Active Calories'),
         'distanceKm': today_values('Walking + Running Distance'),
     })
 
-    # Often empty on a given day, and an empty search stops the shortcut (with a notification on every
-    # run): one request each, most useful first. Exercise time ('Exercise Time') is left out — it was
-    # empty for the user nearly always and the error showed on every app open.
-    get_url((server_ref, '/health/sync'), 'POST', token_ref, {'flights': today_values('Flights Climbed')})
-    get_url((server_ref, '/health/sync'), 'POST', token_ref, {'weightKg': today_values('Weight')})
+    # Often empty today, and an empty search stops the shortcut with a notification on every run. So
+    # these look for the newest sample/day instead and send its start date; the server only counts it
+    # for today if that date is today (weight is stored on its own date).
+    weight, weight_date = latest_with_date('Weight', group_by_day=False)
+    flights, flights_date = latest_with_date('Flights Climbed', group_by_day=True)
+    get_url((server_ref, '/health/sync'), 'POST', token_ref, {
+        'weightKg': weight, 'weightDate': weight_date, 'flights': flights, 'flightsDate': flights_date,
+    })
+    # Last and on its own: without an Apple Watch there may be no exercise minutes at all.
+    exercise, exercise_date = latest_with_date('Exercise Time', group_by_day=True)  # = exercise minutes
+    get_url((server_ref, '/health/sync'), 'POST', token_ref, {'exerciseMin': exercise, 'exerciseDate': exercise_date})
 
     return {
         'WFWorkflowActions': actions,
