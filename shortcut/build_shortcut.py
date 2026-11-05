@@ -263,11 +263,11 @@ def build() -> dict:
         'distanceKm': today_values('Walking + Running Distance'),
     })
 
-    # Often empty on a given day, and an empty search stops the shortcut: one request each, most useful
-    # first. Exercise time is last because without an Apple Watch workout it is usually empty.
-    get_url((server_ref, '/health/sync'), 'POST', token_ref, {'weightKg': today_values('Weight')})
+    # Often empty on a given day, and an empty search stops the shortcut (with a notification on every
+    # run): one request each, most useful first. Exercise time ('Exercise Time') is left out — it was
+    # empty for the user nearly always and the error showed on every app open.
     get_url((server_ref, '/health/sync'), 'POST', token_ref, {'flights': today_values('Flights Climbed')})
-    get_url((server_ref, '/health/sync'), 'POST', token_ref, {'exerciseMin': today_values('Exercise Time')})  # = exercise minutes
+    get_url((server_ref, '/health/sync'), 'POST', token_ref, {'weightKg': today_values('Weight')})
 
     return {
         'WFWorkflowActions': actions,
