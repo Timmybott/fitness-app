@@ -206,6 +206,9 @@ export default async function healthRoutes(app) {
         }
         const w = (await query("SELECT kg FROM body_weights WHERE user_id = $1 AND date = $2 AND source = 'app'", [req.userId, date])).rows[0];
         if (w) samples.push({ key: 'weight', value: w.kg, date: at });
+        const water = (await query('SELECT COALESCE(SUM(ml), 0)::int AS ml FROM water_entries WHERE user_id = $1 AND date = $2', [req.userId, date]))
+          .rows[0].ml;
+        if (water > 0) samples.push({ key: 'water', value: water, date: at });
       }
 
       const strength = (

@@ -255,7 +255,8 @@ def build() -> dict:
 
     r = repeat_each(named('export', dict_key('samples')), 'sample')
     for key, sample_type, unit in [('kcal', 'Dietary Calories', 'kcal'), ('protein', 'Protein', 'g'),
-                                   ('carbs', 'Carbohydrates', 'g'), ('fat', 'Total Fat', 'g'), ('weight', 'Weight', 'kg')]:
+                                   ('carbs', 'Carbohydrates', 'g'), ('fat', 'Total Fat', 'g'), ('weight', 'Weight', 'kg'),
+                                   ('water', 'Water', 'mL')]:
         g_key = if_begin(named('sample', dict_key('key', AS_TEXT)), IS, key)
         log_sample(sample_type, unit, 'sample')
         if_end(g_key)
