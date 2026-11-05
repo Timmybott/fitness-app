@@ -62,10 +62,7 @@ function RootStack() {
         <Stack.Screen name="workout" options={{ presentation: 'fullScreenModal', headerShown: true, gestureEnabled: false }} />
         <Stack.Screen name="template" options={{ presentation: 'modal', headerShown: true }} />
         <Stack.Screen name="workout-detail" options={{ presentation: 'modal', headerShown: true }} />
-        <Stack.Screen
-          name="cardio"
-          options={{ presentation: 'formSheet', headerShown: true, title: 'Cardio', sheetAllowedDetents: [0.75], sheetGrabberVisible: true }}
-        />
+        <Stack.Screen name="cardio" options={{ presentation: 'modal', headerShown: true, title: 'Cardio' }} />
       </Stack.Protected>
       <Stack.Protected guard={!signedIn}>
         <Stack.Screen name="login" />

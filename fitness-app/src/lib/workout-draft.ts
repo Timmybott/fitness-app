@@ -107,7 +107,11 @@ export async function startWorkout(template: Template | null) {
       exerciseId: e.exerciseId,
       name: e.name,
       last: last[e.exerciseId] ?? [],
-      sets: Array.from({ length: e.sets }, () => ({ weight: '', reps: '', done: false })),
+      // Planned kg/reps from the template are filled in; without them, last time's values show as hints.
+      sets:
+        e.targets && e.targets.length > 0
+          ? e.targets.map((t) => ({ weight: t.weight ? String(t.weight).replace('.', ',') : '', reps: t.reps ? String(t.reps) : '', done: false }))
+          : Array.from({ length: e.sets }, () => ({ weight: '', reps: '', done: false })),
     })),
   });
 }
