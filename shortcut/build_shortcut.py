@@ -61,12 +61,22 @@ def named(var: str, aggr: list | None = None) -> dict:
 
 SHORTCUT_INPUT = {'Type': 'ExtensionInput'}
 
+# Values read from a dictionary (and the shortcut input) have no known type, so comparisons like
+# "begins with" / "is greater than" and quantity fields are invalid (red) unless the variable is
+# coerced "as Text" / "as Number" first. Like Cherri: dictionary access first, then the coercion.
+AS_TEXT = 'WFStringContentItem'
+AS_NUMBER = 'WFNumberContentItem'
 
-def dict_key(key: str) -> list:
-    return [
-        {'Type': 'WFCoercionVariableAggrandizement', 'CoercionItemClass': 'WFDictionaryContentItem'},
-        {'Type': 'WFDictionaryValueVariableAggrandizement', 'DictionaryKey': key},
-    ]
+
+def coerce(item_class: str) -> dict:
+    return {'Type': 'WFCoercionVariableAggrandizement', 'CoercionItemClass': item_class}
+
+
+def dict_key(key: str, as_type: str | None = None) -> list:
+    aggr = [{'Type': 'WFDictionaryValueVariableAggrandizement', 'DictionaryKey': key}]
+    if as_type:
+        aggr.append(coerce(as_type))
+    return aggr
 
 
 def attachment(ref: dict) -> dict:
@@ -82,7 +92,10 @@ def text(*parts) -> dict:
         else:
             attachments[f'{{{len(s)}, 1}}'] = p
             s += '￼'
-    return {'Value': {'string': s, 'attachmentsByRange': attachments}, 'WFSerializationType': 'WFTextTokenString'}
+    value = {'string': s}
+    if attachments:
+        value['attachmentsByRange'] = attachments
+    return {'Value': value, 'WFSerializationType': 'WFTextTokenString'}
 
 
 def dictionary(items: dict) -> dict:
@@ -99,6 +112,7 @@ def dictionary(items: dict) -> dict:
 
 
 def quantity(magnitude, unit: str) -> dict:
+    """Quantity field. A variable magnitude is the bare variable reference, not text (as in Cherri)."""
     return {'Value': {'Unit': unit, 'Magnitude': magnitude}, 'WFSerializationType': 'WFQuantityFieldValue'}
 
 
@@ -120,9 +134,11 @@ def if_end(group: str) -> None:
     add('conditional', {'GroupingIdentifier': group, 'WFControlFlowMode': 2})
 
 
-def repeat_each(ref: dict) -> str:
+def repeat_each(ref: dict, item_var: str) -> str:
+    """Repeat with each; like Cherri, the repeat item is stored in `item_var` right away."""
     group = new_uuid()
     add('repeat.each', {'GroupingIdentifier': group, 'WFControlFlowMode': 0, 'WFInput': attachment(ref)})
+    add('setvariable', {'WFVariableName': item_var, 'WFInput': attachment(named('Repeat Item'))})
     return group
 
 
@@ -163,8 +179,8 @@ def today_sum(sample_type: str) -> dict:
 def log_sample(sample_type: str, unit: str, item: str) -> None:
     add('health.quantity.log', {
         'WFQuantitySampleType': sample_type,
-        'WFQuantitySampleQuantity': quantity(text(named(item, dict_key('value'))), unit),
-        'WFQuantitySampleDate': text(named(item, dict_key('date'))),
+        'WFQuantitySampleQuantity': quantity(named(item, dict_key('value', AS_NUMBER)), unit),
+        'WFQuantitySampleDate': text(named(item, dict_key('date', AS_TEXT))),
     })
 
 
@@ -187,7 +203,7 @@ def build() -> dict:
     actions.clear()
 
     # Setup: the app runs the shortcut with "setup|<server>|<token>" as input.
-    g = if_begin(SHORTCUT_INPUT, BEGINS_WITH, 'setup|')
+    g = if_begin({**SHORTCUT_INPUT, 'Aggrandizements': [coerce(AS_TEXT)]}, BEGINS_WITH, 'setup|')
     parts = add('text.split', {'WFTextSeparator': 'Custom', 'WFTextCustomSeparator': '|', 'text': attachment(SHORTCUT_INPUT)})
     server = add('getitemfromlist', {'WFItemSpecifier': 'Item At Index', 'WFItemIndex': 2.0, 'WFInput': attachment(out(parts, 'Geteilter Text'))})
     token = add('getitemfromlist', {'WFItemSpecifier': 'Item At Index', 'WFItemIndex': 3.0, 'WFInput': attachment(out(parts, 'Geteilter Text'))})
@@ -225,29 +241,29 @@ def build() -> dict:
 
     # 2. Export to Health (finished days only, so effectively after midnight).
     export = get_url((server_ref, '/health/export'), 'GET', token_ref)
-    add('setvariable', {'WFVariableName': 'export', 'WFInput': attachment(out(export, 'Inhalte von URL'))})
-    g_count = if_begin(named('export', dict_key('count')), GREATER_THAN, number=0)
+    export_dict = add('detect.dictionary', {'WFInput': attachment(out(export, 'Inhalte von URL'))})
+    add('setvariable', {'WFVariableName': 'export', 'WFInput': attachment(out(export_dict, 'Wörterbuch'))})
+    g_count = if_begin(named('export', dict_key('count', AS_NUMBER)), GREATER_THAN, number=0)
 
-    r = repeat_each(named('export', dict_key('samples')))
+    r = repeat_each(named('export', dict_key('samples')), 'sample')
     for key, sample_type, unit in [('kcal', 'Dietary Calories', 'kcal'), ('protein', 'Protein', 'g'),
                                    ('carbs', 'Carbohydrates', 'g'), ('fat', 'Total Fat', 'g'), ('weight', 'Weight', 'kg')]:
-        g_key = if_begin(named('Repeat Item', dict_key('key')), IS, key)
-        log_sample(sample_type, unit, 'Repeat Item')
+        g_key = if_begin(named('sample', dict_key('key', AS_TEXT)), IS, key)
+        log_sample(sample_type, unit, 'sample')
         if_end(g_key)
     repeat_end(r)
 
-    r = repeat_each(named('export', dict_key('workouts')))
-    item = 'Repeat Item'
+    r = repeat_each(named('export', dict_key('workouts')), 'workout')
     add('health.workout.log', {
-        'WFWorkoutReadableActivityType': text(named(item, dict_key('hkType'))),
-        'WFWorkoutDate': text(named(item, dict_key('start'))),
-        'WFWorkoutDuration': quantity(text(named(item, dict_key('minutes'))), 'min'),
-        'WFWorkoutCaloriesQuantity': quantity(text(named(item, dict_key('kcal'))), 'kcal'),
-        'WFWorkoutDistanceQuantity': quantity(text(named(item, dict_key('km'))), 'km'),
+        'WFWorkoutReadableActivityType': text(named('workout', dict_key('hkType', AS_TEXT))),
+        'WFWorkoutDate': text(named('workout', dict_key('start', AS_TEXT))),
+        'WFWorkoutDuration': quantity(named('workout', dict_key('minutes', AS_NUMBER)), 'min'),
+        'WFWorkoutCaloriesQuantity': quantity(named('workout', dict_key('kcal', AS_NUMBER)), 'kcal'),
+        'WFWorkoutDistanceQuantity': quantity(named('workout', dict_key('km', AS_NUMBER)), 'km'),
     })
     repeat_end(r)
 
-    get_url((server_ref, '/health/export/ack'), 'POST', token_ref, {'ack': text(named('export', dict_key('ack')))})
+    get_url((server_ref, '/health/export/ack'), 'POST', token_ref, {'ack': text(named('export', dict_key('ack', AS_TEXT)))})
     if_end(g_count)
 
     return {

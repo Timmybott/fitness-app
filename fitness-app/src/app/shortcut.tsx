@@ -25,7 +25,11 @@ export default function ShortcutScreen() {
   const [busy, setBusy] = useState(false);
   const last = useApi<HealthToday | null>('/health/today').data;
 
-  const install = () => Linking.openURL(`${API_URL}/shortcut/fitness-sync.shortcut`);
+  // Hands the file URL straight to the Shortcuts app (Safari would only download it to Files).
+  const install = () =>
+    Linking.openURL(
+      `shortcuts://import-shortcut?url=${encodeURIComponent(`${API_URL}/shortcut/fitness-sync.shortcut`)}&name=${encodeURIComponent(SHORTCUT_NAME)}`,
+    );
 
   // The app hands server address and a fresh shortcut-only token to the shortcut, which stores them.
   const connect = async () => {
