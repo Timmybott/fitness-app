@@ -1,5 +1,4 @@
 import * as Haptics from 'expo-haptics';
-import { router } from 'expo-router';
 import { SymbolView } from 'expo-symbols';
 import { Alert, Pressable, StyleSheet, View } from 'react-native';
 
@@ -9,7 +8,7 @@ import { IconButton } from '@/components/icon-button';
 import { Colors, Radius, Spacing } from '@/constants/theme';
 import { api, invalidate, useApi } from '@/lib/api';
 import { formatNumber } from '@/lib/format';
-import { type WaterDay } from '@/lib/types';
+import { parseNum, type WaterDay } from '@/lib/types';
 
 export const WATER_COLOR = '#4FC3F7';
 const GLASS_ML = 250;
@@ -50,7 +49,23 @@ export function WaterCard({ date, goalMl }: { date: string; goalMl: number }) {
         <AppText type="caption" color={Colors.textSecondary}>
           {formatNumber(total / 1000)} / {formatNumber(goalMl / 1000)} l
         </AppText>
-        <IconButton icon="plus" filled onPress={() => router.push({ pathname: '/add-food', params: { date, meal: 'snack', mode: 'drink' } })} />
+        <IconButton
+          icon="plus"
+          filled
+          onPress={() =>
+            Alert.prompt(
+              'Wasser hinzufügen',
+              'Menge in ml',
+              (value) => {
+                const ml = Math.round(parseNum(value));
+                if (ml > 0) add(Math.min(ml, 5000));
+              },
+              'plain-text',
+              '',
+              'number-pad',
+            )
+          }
+        />
       </View>
 
       <View style={styles.track}>
