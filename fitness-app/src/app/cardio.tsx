@@ -8,24 +8,25 @@ import { Chip } from '@/components/chip';
 import { List } from '@/components/list';
 import { Colors, Spacing } from '@/constants/theme';
 import { api, invalidate } from '@/lib/api';
+import { cardioKcal, CARDIO_TYPES, useBodyWeight, type CardioType } from '@/lib/calories';
 import { toDateKey } from '@/lib/date';
 import { logWorkoutToHealth } from '@/lib/health';
 import { parseNum, type Cardio } from '@/lib/types';
 
-const TYPES = ['Laufen', 'Radfahren', 'Gehen', 'Schwimmen', 'Rudern', 'Crosstrainer', 'Seilspringen', 'Sonstiges'];
-
 export default function CardioScreen() {
-  const [type, setType] = useState('Laufen');
+  const bodyKg = useBodyWeight();
+  const [type, setType] = useState<CardioType>('Laufen');
   const [minutes, setMinutes] = useState('');
   const [km, setKm] = useState('');
   const [kcal, setKcal] = useState('');
   const [saving, setSaving] = useState(false);
 
-  const valid = parseNum(minutes) > 0;
+  // Shown as placeholder and used when no calories are entered.
+  const estimate = Math.round(cardioKcal(type, parseNum(minutes), parseNum(km), bodyKg));
 
   const save = async () => {
     if (saving) return;
-    if (!valid) return Alert.alert('Dauer fehlt', 'Trag ein, wie viele Minuten du trainiert hast.');
+    if (parseNum(minutes) <= 0) return Alert.alert('Dauer fehlt', 'Trag ein, wie viele Minuten du trainiert hast.');
     setSaving(true);
     try {
       const c = await api.post<Cardio>('/cardio', {
@@ -33,7 +34,7 @@ export default function CardioScreen() {
         type,
         minutes: parseNum(minutes),
         distanceKm: km ? parseNum(km) : null,
-        kcal: kcal ? parseNum(kcal) : null,
+        kcal: kcal ? parseNum(kcal) : estimate,
       });
       // Logged right after the session, so it ended now.
       const end = new Date();
@@ -56,21 +57,38 @@ export default function CardioScreen() {
       </Stack.Toolbar>
 
       <View style={styles.chips}>
-        {TYPES.map((t) => (
+        {CARDIO_TYPES.map((t) => (
           <Chip key={t} label={t} active={type === t} onPress={() => setType(t)} />
         ))}
       </View>
 
       <List>
         <Field label="Dauer" unit="min" value={minutes} onChange={setMinutes} autoFocus />
-        <Field label="Distanz (optional)" unit="km" value={km} onChange={setKm} />
-        <Field label="Kalorien (optional)" unit="kcal" value={kcal} onChange={setKcal} />
+        <Field label="Distanz" unit="km" value={km} onChange={setKm} />
+        <Field label="Kalorien" unit="kcal" value={kcal} onChange={setKcal} placeholder={estimate ? String(estimate) : '0'} />
       </List>
+      <AppText type="caption" color={Colors.textSecondary} style={styles.hint}>
+        Ohne Angabe schätzt die App die Kalorien aus Dauer, Distanz und deinem Gewicht ({Math.round(bodyKg)} kg).
+      </AppText>
     </ScrollView>
   );
 }
 
-function Field({ label, unit, value, onChange, autoFocus }: { label: string; unit: string; value: string; onChange: (v: string) => void; autoFocus?: boolean }) {
+function Field({
+  label,
+  unit,
+  value,
+  onChange,
+  autoFocus,
+  placeholder = '0',
+}: {
+  label: string;
+  unit: string;
+  value: string;
+  onChange: (v: string) => void;
+  autoFocus?: boolean;
+  placeholder?: string;
+}) {
   return (
     <View style={styles.field}>
       <AppText style={styles.label}>{label}</AppText>
@@ -78,7 +96,7 @@ function Field({ label, unit, value, onChange, autoFocus }: { label: string; uni
         value={value}
         onChangeText={onChange}
         keyboardType="decimal-pad"
-        placeholder="0"
+        placeholder={placeholder}
         placeholderTextColor={Colors.textTertiary}
         autoFocus={autoFocus}
         style={styles.input}
@@ -98,4 +116,5 @@ const styles = StyleSheet.create({
   label: { flex: 1 },
   input: { minWidth: 80, textAlign: 'right', color: Colors.text, fontSize: 17, fontWeight: 600 },
   unit: { width: 36 },
+  hint: { marginHorizontal: Spacing.three, marginTop: -Spacing.two },
 });

@@ -52,6 +52,7 @@ export type WorkoutSummary = {
   finishedAt: string;
   setCount: number;
   volume: number;
+  kcal: number | null;
 };
 
 export type WorkoutDetail = Omit<WorkoutSummary, 'setCount' | 'volume'> & {

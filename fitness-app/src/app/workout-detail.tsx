@@ -53,6 +53,7 @@ export default function WorkoutDetailScreen() {
             <Stat label={formatDay(w.startedAt)} value={formatDuration(Date.parse(w.finishedAt) - Date.parse(w.startedAt))} />
             <Stat label="Sätze" value={String(w.sets.length)} />
             <Stat label="Volumen" value={formatKg(volume)} />
+            {w.kcal ? <Stat label="kcal (geschätzt)" value={String(Math.round(w.kcal))} /> : null}
           </View>
 
           {groups.map((g) => (

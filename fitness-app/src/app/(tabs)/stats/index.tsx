@@ -126,7 +126,8 @@ function goalChecks(day: DailyStats, goals: Goals) {
   return {
     tracked,
     kcal: tracked ? day.kcal <= budget : null,
-    water: day.waterMl >= goals.waterMl,
+    // No water logged at all counts as "not tracked" (grey), not as missed.
+    water: day.waterMl > 0 ? day.waterMl >= goals.waterMl : null,
     protein: tracked ? day.protein >= goals.protein * 0.9 : null,
   };
 }
@@ -146,12 +147,12 @@ function GoalsCard({ days, goals }: { days: DailyStats[]; goals: Goals }) {
 
   const rows: { key: 'kcal' | 'water' | 'protein'; label: string; color: string; of: number }[] = [
     { key: 'kcal', label: 'Kalorien', color: Colors.kcal, of: tracked.length },
-    { key: 'water', label: 'Wasser', color: WATER_COLOR, of: checks.length },
+    { key: 'water', label: 'Wasser', color: WATER_COLOR, of: checks.filter((c) => c.water !== null).length },
     { key: 'protein', label: 'Protein', color: Colors.protein, of: tracked.length },
   ];
 
   return (
-    <Section title="Ziele · 14 Tage" footer="Kalorien: im Budget geblieben · Wasser: Tagesziel getrunken · Protein: mind. 90 % des Ziels. Grau = nichts eingetragen.">
+    <Section title="Ziele · 14 Tage" footer="Kalorien: im Budget geblieben · Wasser: Tagesziel getrunken · Protein: mind. 90 % des Ziels. Grau = an dem Tag nichts eingetragen.">
       <Card style={styles.card}>
         <View style={styles.pair}>
           <Figure value={`${streak}`} label={streak === 1 ? 'Tag in Folge im Kalorienziel' : 'Tage in Folge im Kalorienziel'} />
@@ -190,7 +191,7 @@ function GoalsCard({ days, goals }: { days: DailyStats[]; goals: Goals }) {
   );
 }
 
-function CaloriesCard({ days, goals }: { days: DailyStats[]; goals: Goals }) {
+function CaloriesCard({ days }: { days: DailyStats[] }) {
   const week = days.slice(-7);
   const tracked = week.filter((d) => d.entryCount > 0);
   const avg = (k: 'kcal' | 'protein') => (tracked.length ? tracked.reduce((s, d) => s + d[k], 0) / tracked.length : 0);
@@ -203,7 +204,6 @@ function CaloriesCard({ days, goals }: { days: DailyStats[]; goals: Goals }) {
           <Figure value={tracked.length ? `${Math.round(avg('protein'))} g` : '–'} label="Ø Protein" />
           <Figure value={`${tracked.length}/7`} label="Tage getrackt" />
         </View>
-        <BarChart bars={week.map((d) => ({ label: weekday(d.date), value: d.kcal }))} goal={goals.kcal} color={Colors.kcal} />
       </Card>
     </Section>
   );
@@ -233,7 +233,7 @@ function NutritionStats() {
   return (
     <>
       <GoalsCard days={days} goals={goals} />
-      <CaloriesCard days={days} goals={goals} />
+      <CaloriesCard days={days} />
       <WaterStatsCard days={days} goals={goals} />
     </>
   );

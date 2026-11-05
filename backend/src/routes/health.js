@@ -83,6 +83,8 @@ const WORKOUT_TYPES = {
   Krafttraining: 'Traditional Strength Training',
   Laufen: 'Running',
   Radfahren: 'Cycling',
+  Fahrrad: 'Cycling',
+  Stairmaster: 'Stair Climbing',
   Gehen: 'Walking',
   Schwimmen: 'Swimming',
   Rudern: 'Rowing',
@@ -213,7 +215,7 @@ export default async function healthRoutes(app) {
 
       const strength = (
         await query(
-          `SELECT id, started_at AS start, finished_at AS end FROM workouts
+          `SELECT id, started_at AS start, finished_at AS end, kcal FROM workouts
            WHERE user_id = $1 AND health_exported_at IS NULL AND finished_at > now() - make_interval(days => $2)
            ORDER BY started_at`,
           [req.userId, EXPORT_DAYS],
@@ -235,7 +237,7 @@ export default async function healthRoutes(app) {
           start: w.start.toISOString(),
           end: w.end.toISOString(),
           minutes: Math.max(1, Math.round((w.end - w.start) / 60000)),
-          kcal: 0,
+          kcal: w.kcal ? Math.round(w.kcal) : 0,
           km: 0,
         })),
         ...cardio.map((c) => ({

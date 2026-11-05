@@ -10,12 +10,17 @@ import { Card } from '@/components/card';
 import { List, Row } from '@/components/list';
 import { Colors, Radius, Spacing } from '@/constants/theme';
 import { bridge } from '@/lib/bridge';
+import { useBodyWeight } from '@/lib/calories';
 import { formatClock, formatKg } from '@/lib/format';
 import {
   addExerciseToDraft,
   completedSets,
   discardDraft,
+  draftKcal,
+  durationMs,
   finishWorkout,
+  isRunning,
+  toggleTimer,
   updateDraft,
   useDraft,
   type Draft,
@@ -37,6 +42,7 @@ export default function WorkoutScreen() {
   const draft = useDraft();
   const [saving, setSaving] = useState(false);
   const now = useNow();
+  const bodyKg = useBodyWeight();
 
   // Leaving happens via finish/discard; if the draft disappears, close the screen.
   useEffect(() => {
@@ -44,6 +50,7 @@ export default function WorkoutScreen() {
   }, [draft, saving]);
 
   if (!draft) return null;
+  const running = isRunning(draft);
 
   const done = completedSets(draft);
   const volume = done.reduce((v, s) => v + s.weight * s.reps, 0);
@@ -66,7 +73,7 @@ export default function WorkoutScreen() {
         onPress: async () => {
           setSaving(true);
           try {
-            await finishWorkout();
+            await finishWorkout(bodyKg);
             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
             router.back();
           } catch (e) {
@@ -83,6 +90,7 @@ export default function WorkoutScreen() {
       <Stack.Screen options={{ title: draft.name }} />
       <Stack.Toolbar placement="left">
         <Stack.Toolbar.Button icon="xmark" onPress={discard} />
+        <Stack.Toolbar.Button icon={running ? 'pause.fill' : 'play.fill'} onPress={toggleTimer} />
       </Stack.Toolbar>
       <Stack.Toolbar placement="right">
         <Stack.Toolbar.Button variant="prominent" tintColor={Colors.accent} onPress={() => !saving && finish()}>
@@ -97,9 +105,17 @@ export default function WorkoutScreen() {
         keyboardDismissMode="interactive"
         contentContainerStyle={styles.content}>
         <View style={styles.stats}>
-          <Stat label="Dauer" value={formatClock((now - Date.parse(draft.startedAt)) / 1000)} />
+          <Pressable onPress={toggleTimer} style={styles.stat}>
+            <AppText type="title" color={running ? Colors.text : Colors.textSecondary}>
+              {formatClock(durationMs(draft, now) / 1000)}
+            </AppText>
+            <AppText type="caption" color={running ? Colors.textSecondary : Colors.accent}>
+              {running ? 'Dauer' : 'Pausiert · Tippen'}
+            </AppText>
+          </Pressable>
           <Stat label="Sätze" value={String(done.length)} />
           <Stat label="Volumen" value={formatKg(volume)} />
+          <Stat label="kcal" value={String(Math.round(draftKcal(draft, bodyKg)))} />
         </View>
 
         {draft.exercises.map((e, i) => (

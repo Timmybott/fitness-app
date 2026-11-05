@@ -2,6 +2,7 @@ import Storage from 'expo-sqlite/kv-store';
 import { useSyncExternalStore } from 'react';
 
 import { api, invalidate } from '@/lib/api';
+import { strengthKcal } from '@/lib/calories';
 import { logWorkoutToHealth } from '@/lib/health';
 import { parseNum, type LastSets, type Template } from '@/lib/types';
 
@@ -24,7 +25,28 @@ export type Draft = {
   exercises: DraftExercise[];
   restSeconds: number;
   restEndsAt: number | null;
+  /** Stopwatch: time counted while paused/resumed; runningSince is set while the clock runs. */
+  elapsedMs?: number;
+  runningSince?: number | null;
 };
+
+/** Training time so far. Drafts saved before the pausable clock existed count from their start. */
+export function durationMs(d: Draft, now = Date.now()) {
+  if (d.elapsedMs === undefined) return now - Date.parse(d.startedAt);
+  return d.elapsedMs + (d.runningSince ? now - d.runningSince : 0);
+}
+
+export function isRunning(d: Draft) {
+  return d.elapsedMs === undefined || d.runningSince != null;
+}
+
+export function toggleTimer() {
+  updateDraft((d) => {
+    const now = Date.now();
+    if (isRunning(d)) return { ...d, elapsedMs: durationMs(d, now), runningSince: null };
+    return { ...d, elapsedMs: d.elapsedMs ?? 0, runningSince: now };
+  });
+}
 
 const KEY = 'workout-draft';
 const listeners = new Set<() => void>();
@@ -78,6 +100,9 @@ export async function startWorkout(template: Template | null) {
     startedAt: new Date().toISOString(),
     restSeconds: 90,
     restEndsAt: null,
+    // The clock starts paused; it is started (and paused) from the workout screen.
+    elapsedMs: 0,
+    runningSince: null,
     exercises: exercises.map((e) => ({
       exerciseId: e.exerciseId,
       name: e.name,
@@ -122,17 +147,27 @@ export function completedSets(d: Draft) {
   );
 }
 
-export async function finishWorkout() {
+/** Estimated calories of the completed sets (see lib/calories). */
+export function draftKcal(d: Draft, bodyKg: number) {
+  const sets = d.exercises.flatMap((e) => e.sets.map((s, i) => ({ s, i, e })).filter(({ s }) => s.done).map(({ e, i }) => ({ name: e.name, ...effectiveSet(e, i) })));
+  return strengthKcal(sets, bodyKg);
+}
+
+export async function finishWorkout(bodyKg: number) {
   if (!draft) return;
   const finishedAt = new Date();
+  // The workout spans the time the clock actually ran (at least a minute).
+  const startedAt = new Date(finishedAt.getTime() - Math.max(60000, durationMs(draft, finishedAt.getTime())));
+  const kcal = Math.round(draftKcal(draft, bodyKg));
   const { id } = await api.post<{ id: number }>('/workouts', {
     name: draft.name,
     templateId: draft.templateId,
-    startedAt: draft.startedAt,
+    startedAt: startedAt.toISOString(),
     finishedAt: finishedAt.toISOString(),
+    kcal,
     sets: completedSets(draft),
   });
-  logWorkoutToHealth({ syncId: `workout-${id}`, type: 'Krafttraining', start: new Date(draft.startedAt), end: finishedAt });
+  logWorkoutToHealth({ syncId: `workout-${id}`, type: 'Krafttraining', start: startedAt, end: finishedAt, kcal });
   set(null);
   invalidate();
 }

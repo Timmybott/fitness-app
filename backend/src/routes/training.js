@@ -123,6 +123,7 @@ export default async function trainingRoutes(app) {
             templateId: { type: ['integer', 'null'] },
             startedAt: { type: 'string', format: 'date-time' },
             finishedAt: { type: 'string', format: 'date-time' },
+            kcal: { type: ['number', 'null'], minimum: 0, maximum: 10000 },
             sets: {
               type: 'array',
               maxItems: 300,
@@ -152,8 +153,8 @@ export default async function trainingRoutes(app) {
           templateId = t.rows[0]?.id ?? null;
         }
         const { rows } = await db.query(
-          'INSERT INTO workouts (user_id, template_id, name, started_at, finished_at) VALUES ($1, $2, $3, $4, $5) RETURNING id',
-          [req.userId, templateId, b.name, b.startedAt, b.finishedAt],
+          'INSERT INTO workouts (user_id, template_id, name, started_at, finished_at, kcal) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id',
+          [req.userId, templateId, b.name, b.startedAt, b.finishedAt, b.kcal ?? null],
         );
         for (const s of b.sets) {
           await db.query(
@@ -168,7 +169,7 @@ export default async function trainingRoutes(app) {
   app.get('/workouts', async (req) => {
     const limit = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 30));
     const { rows } = await query(
-      `SELECT w.id, w.name, w.started_at AS "startedAt", w.finished_at AS "finishedAt",
+      `SELECT w.id, w.name, w.started_at AS "startedAt", w.finished_at AS "finishedAt", w.kcal,
          COUNT(s.id)::int AS "setCount", COALESCE(SUM(s.weight * s.reps), 0) AS volume
        FROM workouts w LEFT JOIN workout_sets s ON s.workout_id = w.id
        WHERE w.user_id = $1 GROUP BY w.id ORDER BY w.started_at DESC LIMIT $2`,
@@ -179,7 +180,7 @@ export default async function trainingRoutes(app) {
 
   app.get('/workouts/:id', async (req, reply) => {
     const w = await query(
-      'SELECT id, name, started_at AS "startedAt", finished_at AS "finishedAt" FROM workouts WHERE id = $1 AND user_id = $2',
+      'SELECT id, name, started_at AS "startedAt", finished_at AS "finishedAt", kcal FROM workouts WHERE id = $1 AND user_id = $2',
       [req.params.id, req.userId],
     );
     if (!w.rows[0]) return reply.code(404).send({ error: 'Workout nicht gefunden' });

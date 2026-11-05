@@ -48,6 +48,8 @@ const ACTIVITY: Record<string, number> = {
   Krafttraining: 50,
   Laufen: 37,
   Radfahren: 13,
+  Fahrrad: 13,
+  Stairmaster: 44, // stairClimbing
   Gehen: 52,
   Schwimmen: 46,
   Rudern: 35,

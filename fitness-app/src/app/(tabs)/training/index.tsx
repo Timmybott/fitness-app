@@ -14,7 +14,7 @@ import { formatDateKey } from '@/lib/date';
 import { formatDay, formatDuration, formatKg, formatNumber } from '@/lib/format';
 import { deleteWorkoutFromHealth } from '@/lib/health';
 import { type Cardio, type Template, type WorkoutSummary } from '@/lib/types';
-import { startWorkout, useDraft, type Draft } from '@/lib/workout-draft';
+import { durationMs, isRunning, startWorkout, useDraft, type Draft } from '@/lib/workout-draft';
 
 export default function TrainingScreen() {
   const draft = useDraft();
@@ -64,7 +64,7 @@ export default function TrainingScreen() {
               <Row
                 key={w.id}
                 title={w.name}
-                subtitle={`${formatDay(w.startedAt)} · ${formatDuration(Date.parse(w.finishedAt) - Date.parse(w.startedAt))} · ${w.setCount} Sätze`}
+                subtitle={`${formatDay(w.startedAt)} · ${formatDuration(Date.parse(w.finishedAt) - Date.parse(w.startedAt))} · ${w.setCount} Sätze${w.kcal ? ` · ${Math.round(w.kcal)} kcal` : ""}`}
                 value={formatKg(w.volume)}
                 chevron
                 onPress={() => router.push({ pathname: '/workout-detail', params: { id: w.id } })}
@@ -121,7 +121,7 @@ function ActiveWorkoutBanner({ draft }: { draft: Draft }) {
           {draft.name} läuft
         </AppText>
         <AppText type="caption" color={Colors.onAccent}>
-          seit {formatDuration(now - Date.parse(draft.startedAt))} · Tippen zum Fortsetzen
+          {isRunning(draft) ? formatDuration(durationMs(draft, now)) : 'Pausiert'} · Tippen zum Fortsetzen
         </AppText>
       </View>
       <SymbolView name="chevron.right" size={14} weight="bold" tintColor={Colors.onAccent} />
