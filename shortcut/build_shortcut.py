@@ -251,8 +251,8 @@ def build() -> dict:
     get_url((server_ref, '/health/export/ack'), 'POST', token_ref, {'ack': text(named('export', dict_key('ack', AS_TEXT)))})
     if_end(g_count)
 
-    # 2. Import from Health. Only types that practically always have data today: an empty search stops
-    #    the shortcut. Exercise minutes and flights return once empty results can be handled.
+    # 2. Import from Health. An empty search stops the shortcut, so the types that practically always
+    #    have data are sent first; exercise time and flights (often 0) follow in a second request.
     steps = today_sum('Steps')
     active = today_sum('Active Calories')
     distance = today_sum('Walking + Running Distance')
@@ -262,6 +262,13 @@ def build() -> dict:
         'activeKcal': text(out(active, 'Statistik')),
         'distanceKm': text(out(distance, 'Statistik')),
         'weightKg': text(out(weight, 'Health-Messungen')),
+    })
+
+    exercise = today_sum('Exercise Time')  # Shortcuts' name for exercise minutes (from the user's iPhone)
+    flights = today_sum('Flights Climbed')
+    get_url((server_ref, '/health/sync'), 'POST', token_ref, {
+        'exerciseMin': text(out(exercise, 'Statistik')),
+        'flights': text(out(flights, 'Statistik')),
     })
 
     return {
