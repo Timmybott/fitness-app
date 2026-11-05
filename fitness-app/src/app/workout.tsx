@@ -7,9 +7,9 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppText } from '@/components/app-text';
 import { Card } from '@/components/card';
-import { ExercisePicker } from '@/components/exercise-picker';
 import { List, Row } from '@/components/list';
 import { Colors, Radius, Spacing } from '@/constants/theme';
+import { bridge } from '@/lib/bridge';
 import { formatClock, formatKg } from '@/lib/format';
 import {
   addExerciseToDraft,
@@ -35,7 +35,6 @@ function useNow() {
 
 export default function WorkoutScreen() {
   const draft = useDraft();
-  const [picking, setPicking] = useState(false);
   const [saving, setSaving] = useState(false);
   const now = useNow();
 
@@ -86,7 +85,7 @@ export default function WorkoutScreen() {
         <Stack.Toolbar.Button icon="xmark" onPress={discard} />
       </Stack.Toolbar>
       <Stack.Toolbar placement="right">
-        <Stack.Toolbar.Button variant="prominent" tintColor={Colors.accent} onPress={finish} disabled={saving}>
+        <Stack.Toolbar.Button variant="prominent" tintColor={Colors.accent} onPress={() => !saving && finish()}>
           Fertig
         </Stack.Toolbar.Button>
       </Stack.Toolbar>
@@ -108,20 +107,20 @@ export default function WorkoutScreen() {
         ))}
 
         <List>
-          <Row title="Übung hinzufügen" icon="plus" onPress={() => setPicking(true)} />
+          <Row
+            title="Übung hinzufügen"
+            icon="plus"
+            onPress={() => {
+              bridge.onExercisePicked((e) => addExerciseToDraft(e));
+              router.push('/exercise-picker');
+            }}
+          />
         </List>
       </ScrollView>
 
       <RestTimer draft={draft} now={now} />
 
-      <ExercisePicker
-        visible={picking}
-        onClose={() => setPicking(false)}
-        onPick={(e) => {
-          setPicking(false);
-          addExerciseToDraft(e);
-        }}
-      />
+
     </View>
   );
 }

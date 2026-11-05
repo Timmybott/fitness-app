@@ -9,12 +9,13 @@ import { BarChart, LineChart } from '@/components/charts';
 import { Chip } from '@/components/chip';
 import { ErrorNotice } from '@/components/list';
 import { Screen, Section } from '@/components/screen';
+import { WATER_COLOR } from '@/components/water-card';
 import { Colors, Spacing } from '@/constants/theme';
 import { api, invalidate, useApi } from '@/lib/api';
 import { shiftDateKey, toDateKey } from '@/lib/date';
 import { formatKg, formatNumber } from '@/lib/format';
 import { latestHealthWeight, logWeightToHealth, useHealthEnabled } from '@/lib/health';
-import { parseNum, type BodyWeight, type DailyNutrition, type Goals, type Template, type WorkoutSummary } from '@/lib/types';
+import { parseNum, type BodyWeight, type DailyStats, type Goals, type Template, type WorkoutSummary } from '@/lib/types';
 
 export default function StatsScreen() {
   const weights = useApi<BodyWeight[]>('/weights?days=90');
@@ -66,7 +67,7 @@ export default function StatsScreen() {
 
       {weights.error && <ErrorNotice message={weights.error} onRetry={weights.reload} />}
       <WeightCard weights={weights.data ?? []} onLog={logWeight} />
-      <CaloriesCard />
+      <NutritionStats />
       <TrainingCard />
       <StrengthCard />
     </Screen>
@@ -113,34 +114,128 @@ function WeightCard({ weights, onLog }: { weights: BodyWeight[]; onLog: () => vo
   );
 }
 
-function CaloriesCard() {
-  const daily = useApi<DailyNutrition[]>('/nutrition/daily?days=7').data ?? [];
-  const goals = useApi<Goals>('/goals').data;
-  const today = toDateKey(new Date());
+const weekday = (date: string) => {
+  const [y, m, d] = date.split('-').map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString('de-DE', { weekday: 'narrow' });
+};
 
-  const bars = Array.from({ length: 7 }, (_, i) => {
-    const date = shiftDateKey(today, i - 6);
-    const [y, m, d] = date.split('-').map(Number);
-    return {
-      label: new Date(y, m - 1, d).toLocaleDateString('de-DE', { weekday: 'narrow' }),
-      value: daily.find((x) => x.date === date)?.kcal ?? 0,
-    };
-  });
-  const tracked = daily.filter((d) => d.kcal > 0);
-  const avg = tracked.length ? tracked.reduce((s, d) => s + d.kcal, 0) / tracked.length : 0;
-  const avgProtein = tracked.length ? tracked.reduce((s, d) => s + d.protein, 0) / tracked.length : 0;
+/** Which daily goals were met: calories (within budget, incl. burned if enabled), water, protein. */
+function goalChecks(day: DailyStats, goals: Goals) {
+  const tracked = day.entryCount > 0;
+  const budget = goals.kcal + (goals.addBurned ? (day.activeKcal ?? 0) : 0);
+  return {
+    tracked,
+    kcal: tracked ? day.kcal <= budget : null,
+    water: day.waterMl >= goals.waterMl,
+    protein: tracked ? day.protein >= goals.protein * 0.9 : null,
+  };
+}
+
+function GoalsCard({ days, goals }: { days: DailyStats[]; goals: Goals }) {
+  const checks = days.map((d) => ({ date: d.date, ...goalChecks(d, goals) }));
+  const tracked = checks.filter((c) => c.tracked);
+  const count = (key: 'kcal' | 'water' | 'protein') => checks.filter((c) => c[key] === true).length;
+  // Streak of days (back from yesterday, plus today if already met) with the calorie goal met.
+  let streak = 0;
+  for (let i = checks.length - 1; i >= 0; i--) {
+    const c = checks[i];
+    if (c.kcal === true) streak++;
+    else if (i === checks.length - 1) continue;
+    else break;
+  }
+
+  const rows: { key: 'kcal' | 'water' | 'protein'; label: string; color: string; of: number }[] = [
+    { key: 'kcal', label: 'Kalorien', color: Colors.kcal, of: tracked.length },
+    { key: 'water', label: 'Wasser', color: WATER_COLOR, of: checks.length },
+    { key: 'protein', label: 'Protein', color: Colors.protein, of: tracked.length },
+  ];
+
+  return (
+    <Section title="Ziele · 14 Tage" footer="Kalorien: im Budget geblieben · Wasser: Tagesziel getrunken · Protein: mind. 90 % des Ziels. Grau = nichts eingetragen.">
+      <Card style={styles.card}>
+        <View style={styles.pair}>
+          <Figure value={`${streak}`} label={streak === 1 ? 'Tag in Folge im Kalorienziel' : 'Tage in Folge im Kalorienziel'} />
+          <Figure value={`${tracked.length}/${checks.length}`} label="Tage getrackt" />
+        </View>
+        {rows.map((r) => (
+          <View key={r.key} style={styles.goalRow}>
+            <View style={styles.goalLabel}>
+              <AppText type="caption">{r.label}</AppText>
+              <AppText type="caption" color={Colors.textSecondary}>
+                {count(r.key)}/{r.of}
+              </AppText>
+            </View>
+            <View style={styles.dots}>
+              {checks.map((c) => (
+                <View
+                  key={c.date}
+                  style={[styles.dot, { backgroundColor: c[r.key] === true ? r.color : c[r.key] === false ? Colors.danger : Colors.cardElevated }]}
+                />
+              ))}
+            </View>
+          </View>
+        ))}
+        <View style={styles.goalRow}>
+          <View style={styles.goalLabel} />
+          <View style={styles.dots}>
+            {checks.map((c) => (
+              <AppText key={c.date} type="caption" color={Colors.textTertiary} style={styles.dotLabel}>
+                {weekday(c.date)}
+              </AppText>
+            ))}
+          </View>
+        </View>
+      </Card>
+    </Section>
+  );
+}
+
+function CaloriesCard({ days, goals }: { days: DailyStats[]; goals: Goals }) {
+  const week = days.slice(-7);
+  const tracked = week.filter((d) => d.entryCount > 0);
+  const avg = (k: 'kcal' | 'protein') => (tracked.length ? tracked.reduce((s, d) => s + d[k], 0) / tracked.length : 0);
 
   return (
     <Section title="Kalorien · 7 Tage">
       <Card style={styles.card}>
         <View style={styles.pair}>
-          <Figure value={tracked.length ? Math.round(avg).toLocaleString('de-DE') : '–'} label="Ø kcal pro Tag" />
-          <Figure value={tracked.length ? `${Math.round(avgProtein)} g` : '–'} label="Ø Protein" />
+          <Figure value={tracked.length ? Math.round(avg('kcal')).toLocaleString('de-DE') : '–'} label="Ø kcal pro Tag" />
+          <Figure value={tracked.length ? `${Math.round(avg('protein'))} g` : '–'} label="Ø Protein" />
           <Figure value={`${tracked.length}/7`} label="Tage getrackt" />
         </View>
-        <BarChart bars={bars} goal={goals?.kcal} color={Colors.kcal} />
+        <BarChart bars={week.map((d) => ({ label: weekday(d.date), value: d.kcal }))} goal={goals.kcal} color={Colors.kcal} />
       </Card>
     </Section>
+  );
+}
+
+function WaterStatsCard({ days, goals }: { days: DailyStats[]; goals: Goals }) {
+  const week = days.slice(-7);
+  const avg = week.reduce((s, d) => s + d.waterMl, 0) / week.length;
+  return (
+    <Section title="Wasser · 7 Tage">
+      <Card style={styles.card}>
+        <View style={styles.pair}>
+          <Figure value={`${formatNumber(avg / 1000)} l`} label="Ø pro Tag" />
+          <Figure value={`${week.filter((d) => d.waterMl >= goals.waterMl).length}/7`} label="Tage Ziel erreicht" />
+        </View>
+        {/* Bars over the goal are fine for water, so they keep the water color. */}
+        <BarChart bars={week.map((d) => ({ label: weekday(d.date), value: Math.min(d.waterMl, goals.waterMl) }))} goal={goals.waterMl} color={WATER_COLOR} />
+      </Card>
+    </Section>
+  );
+}
+
+function NutritionStats() {
+  const days = useApi<DailyStats[]>('/nutrition/daily?days=14').data;
+  const goals = useApi<Goals>('/goals').data;
+  if (!days || !goals) return null;
+  return (
+    <>
+      <GoalsCard days={days} goals={goals} />
+      <CaloriesCard days={days} goals={goals} />
+      <WaterStatsCard days={days} goals={goals} />
+    </>
   );
 }
 
@@ -239,4 +334,9 @@ const styles = StyleSheet.create({
   figure: { flex: 1 },
   empty: { alignItems: 'flex-start', gap: Spacing.three },
   chips: { gap: Spacing.two },
+  goalRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two },
+  goalLabel: { width: 78, gap: 2 },
+  dots: { flex: 1, flexDirection: 'row', justifyContent: 'space-between' },
+  dot: { width: 14, height: 14, borderRadius: 7 },
+  dotLabel: { width: 14, textAlign: 'center', fontSize: 10 },
 });

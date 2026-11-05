@@ -5,8 +5,10 @@ import { useEffect } from 'react';
 
 import { Colors } from '@/constants/theme';
 import { AuthProvider, useAuth } from '@/lib/auth';
+import { installErrorReporting } from '@/lib/error-reporting';
 
 SplashScreen.preventAutoHideAsync();
+installErrorReporting();
 
 const theme = {
   ...DarkTheme,
@@ -50,6 +52,13 @@ function RootStack() {
         <Stack.Screen name="photo" options={{ presentation: 'modal', headerShown: true }} />
         <Stack.Screen name="recipe" options={{ presentation: 'modal', headerShown: true }} />
         <Stack.Screen name="shortcut" options={{ presentation: 'modal', headerShown: true }} />
+        <Stack.Screen name="recipe-scan" options={{ presentation: 'modal', headerShown: true }} />
+        <Stack.Screen name="exercise-picker" options={{ presentation: 'modal', headerShown: true }} />
+        <Stack.Screen name="food-picker" options={{ presentation: 'modal', headerShown: true }} />
+        <Stack.Screen
+          name="meal"
+          options={{ presentation: 'formSheet', headerShown: true, sheetAllowedDetents: [0.6, 1], sheetGrabberVisible: true }}
+        />
         <Stack.Screen name="workout" options={{ presentation: 'fullScreenModal', headerShown: true, gestureEnabled: false }} />
         <Stack.Screen name="template" options={{ presentation: 'modal', headerShown: true }} />
         <Stack.Screen name="workout-detail" options={{ presentation: 'modal', headerShown: true }} />

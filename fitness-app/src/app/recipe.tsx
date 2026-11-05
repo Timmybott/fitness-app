@@ -1,51 +1,45 @@
 import * as Haptics from 'expo-haptics';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
-import { Alert, Modal, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { Alert, Pressable, StyleSheet, TextInput, View } from 'react-native';
 
 import { AppText } from '@/components/app-text';
-import { FoodSearch } from '@/components/food-search';
 import { List, Row } from '@/components/list';
 import { Screen, Section } from '@/components/screen';
 import { Colors, Radius, Spacing } from '@/constants/theme';
 import { api, invalidate, useApi } from '@/lib/api';
-import { parseNum, scaleMacros, sumMacros, type Food, type PortionItem, type Recipe } from '@/lib/types';
+import { bridge } from '@/lib/bridge';
+import { sumMacros, type PortionItem, type Recipe } from '@/lib/types';
 
 export default function RecipeScreen() {
   const { id } = useLocalSearchParams<{ id?: string }>();
   const recipes = useApi<Recipe[]>(id ? '/recipes' : null).data;
   const existing = recipes?.find((r) => String(r.id) === id);
+  // A recipe read from a photo arrives as a draft to review before saving.
+  const [draft] = useState(() => (id ? null : bridge.takeRecipeDraft()));
 
   if (id && !existing) return null;
-  return <RecipeForm key={existing?.id ?? 'new'} recipe={existing} />;
+  return <RecipeForm key={existing?.id ?? 'new'} recipe={existing} draft={draft} />;
 }
 
-function RecipeForm({ recipe }: { recipe?: Recipe }) {
-  const [name, setName] = useState(recipe?.name ?? '');
-  const [servings, setServings] = useState(recipe?.servings ?? 1);
-  const [items, setItems] = useState<PortionItem[]>(recipe?.items ?? []);
-  const [picking, setPicking] = useState(false);
+function RecipeForm({ recipe, draft }: { recipe?: Recipe; draft: ReturnType<typeof bridge.takeRecipeDraft> }) {
+  const [name, setName] = useState(recipe?.name ?? draft?.name ?? '');
+  const [servings, setServings] = useState(recipe?.servings ?? draft?.servings ?? 1);
+  const [items, setItems] = useState<PortionItem[]>(recipe?.items ?? draft?.items ?? []);
   const [saving, setSaving] = useState(false);
 
   const total = sumMacros(items);
   const per = (n: number) => Math.round(n / servings);
 
-  const addFood = (food: Food) => {
-    setPicking(false);
-    Alert.prompt(
-      food.name,
-      'Menge in Gramm',
-      (value) => {
-        const grams = parseNum(value);
-        if (grams > 0) setItems((l) => [...l, { name: food.name, grams, ...scaleMacros(food, grams) }]);
-      },
-      'plain-text',
-      String(food.servingGrams ?? 100),
-      'number-pad',
-    );
+  const addIngredient = () => {
+    bridge.onIngredientPicked((item) => setItems((l) => [...l, item]));
+    router.push('/food-picker');
   };
 
   const save = async () => {
+    if (saving) return;
+    if (!name.trim()) return Alert.alert('Name fehlt', 'Gib dem Rezept einen Namen.');
+    if (items.length === 0) return Alert.alert('Keine Zutaten', 'Füge mindestens eine Zutat hinzu.');
     setSaving(true);
     const body = { name: name.trim(), servings, items };
     try {
@@ -78,7 +72,7 @@ function RecipeForm({ recipe }: { recipe?: Recipe }) {
     <Screen>
       <Stack.Screen options={{ title: recipe ? 'Rezept bearbeiten' : 'Neues Rezept' }} />
       <Stack.Toolbar placement="right">
-        <Stack.Toolbar.Button variant="done" onPress={save} disabled={!name.trim() || items.length === 0 || saving}>
+        <Stack.Toolbar.Button variant="done" onPress={save}>
           Sichern
         </Stack.Toolbar.Button>
       </Stack.Toolbar>
@@ -88,7 +82,6 @@ function RecipeForm({ recipe }: { recipe?: Recipe }) {
         onChangeText={setName}
         placeholder="Name, z. B. Overnight Oats"
         placeholderTextColor={Colors.textTertiary}
-        autoFocus={!recipe}
         style={styles.nameInput}
       />
 
@@ -111,19 +104,19 @@ function RecipeForm({ recipe }: { recipe?: Recipe }) {
         <List>
           {items.map((it, i) => (
             <Row
-              key={i}
+              key={`${it.name}-${i}`}
               title={it.name}
-              subtitle={`${Math.round(it.grams)} g`}
+              subtitle={`${Math.round(it.grams)} g · P ${Math.round(it.protein)} · K ${Math.round(it.carbs)} · F ${Math.round(it.fat)}`}
               value={`${Math.round(it.kcal)} kcal`}
               onLongPress={() => setItems((l) => l.filter((_, j) => j !== i))}
             />
           ))}
-          <Row title="Zutat hinzufügen" icon="plus" onPress={() => setPicking(true)} />
+          <Row title="Zutat hinzufügen" icon="plus" onPress={addIngredient} />
         </List>
       </Section>
 
       {items.length > 0 && (
-        <Section title="Pro Portion">
+        <Section title={servings > 1 ? 'Pro Portion' : 'Nährwerte'}>
           <List>
             <Row title="Kalorien" value={`${per(total.kcal)} kcal`} />
             <Row title="Protein" value={`${per(total.protein)} g`} />
@@ -138,20 +131,6 @@ function RecipeForm({ recipe }: { recipe?: Recipe }) {
           <Row title="Rezept löschen" destructive onPress={remove} />
         </List>
       )}
-
-      <Modal visible={picking} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setPicking(false)}>
-        <View style={styles.sheet}>
-          <View style={styles.sheetHeader}>
-            <AppText type="headline">Zutat wählen</AppText>
-            <Pressable onPress={() => setPicking(false)} hitSlop={10}>
-              <AppText color={Colors.accent}>Abbrechen</AppText>
-            </Pressable>
-          </View>
-          <ScrollView contentContainerStyle={styles.sheetContent} keyboardShouldPersistTaps="handled">
-            <FoodSearch onSelect={addFood} />
-          </ScrollView>
-        </View>
-      </Modal>
     </Screen>
   );
 }
@@ -171,7 +150,4 @@ const styles = StyleSheet.create({
   servings: { flexDirection: 'row', alignItems: 'center', gap: Spacing.three, paddingHorizontal: Spacing.three, minHeight: 50 },
   step: { width: 34, height: 30, borderRadius: Radius.small, backgroundColor: Colors.cardElevated, alignItems: 'center', justifyContent: 'center' },
   servingsValue: { minWidth: 24, textAlign: 'center' },
-  sheet: { flex: 1, backgroundColor: Colors.background },
-  sheetHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: Spacing.three, paddingTop: Spacing.four },
-  sheetContent: { padding: Spacing.three, paddingBottom: Spacing.six },
 });

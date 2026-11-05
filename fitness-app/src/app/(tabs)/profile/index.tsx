@@ -1,21 +1,25 @@
 import * as Haptics from 'expo-haptics';
 import { router, Stack } from 'expo-router';
 import { useState } from 'react';
-import { Alert, StyleSheet, TextInput, View } from 'react-native';
+import { Alert, StyleSheet, Switch, TextInput, View } from 'react-native';
 
 import { AppText } from '@/components/app-text';
 import { List, Row } from '@/components/list';
 import { Screen, Section } from '@/components/screen';
+import { WATER_COLOR } from '@/components/water-card';
 import { Colors, Spacing } from '@/constants/theme';
 import { api, API_URL, invalidate, useApi } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { type Goals, type HealthToday } from '@/lib/types';
 
-const FIELDS: { key: keyof Goals; label: string; unit: string; color: string }[] = [
+type NumberGoal = Exclude<keyof Goals, 'addBurned'>;
+
+const FIELDS: { key: NumberGoal; label: string; unit: string; color: string }[] = [
   { key: 'kcal', label: 'Kalorien', unit: 'kcal', color: Colors.kcal },
   { key: 'protein', label: 'Protein', unit: 'g', color: Colors.protein },
   { key: 'carbs', label: 'Kohlenhydrate', unit: 'g', color: Colors.carbs },
   { key: 'fat', label: 'Fett', unit: 'g', color: Colors.fat },
+  { key: 'waterMl', label: 'Wasser', unit: 'ml', color: WATER_COLOR },
 ];
 
 export default function ProfileScreen() {
@@ -83,13 +87,17 @@ function HealthSection() {
 
 function GoalsForm({ goals }: { goals: Goals }) {
   const [draft, setDraft] = useState<Record<string, string>>(() => Object.fromEntries(FIELDS.map((f) => [f.key, String(goals[f.key])])));
+  const [addBurned, setAddBurned] = useState(goals.addBurned);
 
-  const dirty = FIELDS.some((f) => draft[f.key] !== String(goals[f.key]));
+  const dirty = addBurned !== goals.addBurned || FIELDS.some((f) => draft[f.key] !== String(goals[f.key]));
   // Calories implied by the macro goals (4/4/9 kcal per gram), as a sanity check.
   const macroKcal = (parseFloat(draft.protein) || 0) * 4 + (parseFloat(draft.carbs) || 0) * 4 + (parseFloat(draft.fat) || 0) * 9;
 
   const save = async () => {
-    const parsed = Object.fromEntries(FIELDS.map((f) => [f.key, Math.max(0, Math.round(parseFloat(draft[f.key]) || 0))])) as Goals;
+    const parsed = {
+      ...(Object.fromEntries(FIELDS.map((f) => [f.key, Math.max(0, Math.round(parseFloat(draft[f.key]) || 0))])) as Record<NumberGoal, number>),
+      addBurned,
+    };
     try {
       await api.put('/goals', parsed);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -125,6 +133,13 @@ function GoalsForm({ goals }: { goals: Goals }) {
             </AppText>
           </View>
         ))}
+      </List>
+      <List>
+        <Row
+          title="Verbrannte Kalorien hinzurechnen"
+          subtitle="Aktivkalorien aus Health erhöhen dein Tagesbudget"
+          right={<Switch value={addBurned} onValueChange={setAddBurned} trackColor={{ true: Colors.accent }} />}
+        />
       </List>
     </Section>
   );

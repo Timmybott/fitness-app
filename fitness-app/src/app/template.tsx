@@ -5,11 +5,11 @@ import { useState } from 'react';
 import { Alert, Pressable, StyleSheet, TextInput, View } from 'react-native';
 
 import { AppText } from '@/components/app-text';
-import { ExercisePicker } from '@/components/exercise-picker';
 import { List, Row } from '@/components/list';
 import { Screen, Section } from '@/components/screen';
 import { Colors, Radius, Spacing } from '@/constants/theme';
 import { api, invalidate, useApi } from '@/lib/api';
+import { bridge } from '@/lib/bridge';
 import { type Template, type TemplateExercise } from '@/lib/types';
 
 export default function TemplateScreen() {
@@ -25,7 +25,6 @@ export default function TemplateScreen() {
 function TemplateForm({ template }: { template?: Template }) {
   const [name, setName] = useState(template?.name ?? '');
   const [exercises, setExercises] = useState<TemplateExercise[]>(template?.exercises ?? []);
-  const [picking, setPicking] = useState(false);
   const [saving, setSaving] = useState(false);
 
   const update = (i: number, patch: Partial<TemplateExercise>) =>
@@ -40,7 +39,15 @@ function TemplateForm({ template }: { template?: Template }) {
       return next;
     });
 
+  const addExercise = () => {
+    bridge.onExercisePicked((e) => setExercises((l) => [...l, { exerciseId: e.id, name: e.name, muscle: e.muscle, sets: 3, reps: 10 }]));
+    router.push('/exercise-picker');
+  };
+
   const save = async () => {
+    if (saving) return;
+    if (!name.trim()) return Alert.alert('Name fehlt', 'Gib der Vorlage einen Namen, z. B. Push.');
+    if (exercises.length === 0) return Alert.alert('Keine Übungen', 'Füge mindestens eine Übung hinzu.');
     setSaving(true);
     const body = { name: name.trim(), exercises: exercises.map(({ exerciseId, sets, reps }) => ({ exerciseId, sets, reps })) };
     try {
@@ -76,7 +83,7 @@ function TemplateForm({ template }: { template?: Template }) {
         <Stack.Toolbar.Button onPress={() => router.back()}>Abbrechen</Stack.Toolbar.Button>
       </Stack.Toolbar>
       <Stack.Toolbar placement="right">
-        <Stack.Toolbar.Button variant="done" onPress={save} disabled={!name.trim() || exercises.length === 0 || saving}>
+        <Stack.Toolbar.Button variant="done" onPress={save}>
           Sichern
         </Stack.Toolbar.Button>
       </Stack.Toolbar>
@@ -112,7 +119,7 @@ function TemplateForm({ template }: { template?: Template }) {
           </List>
         )}
         <List>
-          <Row title="Übung hinzufügen" icon="plus" onPress={() => setPicking(true)} />
+          <Row title="Übung hinzufügen" icon="plus" onPress={addExercise} />
         </List>
       </Section>
 
@@ -122,14 +129,7 @@ function TemplateForm({ template }: { template?: Template }) {
         </List>
       )}
 
-      <ExercisePicker
-        visible={picking}
-        onClose={() => setPicking(false)}
-        onPick={(e) => {
-          setPicking(false);
-          setExercises((l) => [...l, { exerciseId: e.id, name: e.name, muscle: e.muscle, sets: 3, reps: 10 }]);
-        }}
-      />
+
     </Screen>
   );
 }

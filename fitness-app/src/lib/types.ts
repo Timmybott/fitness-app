@@ -23,7 +23,19 @@ export type Food = Macros & {
 /** A logged food. Values are for the logged amount, not per 100 g. */
 export type Entry = Macros & { id: number; date: string; meal: Meal; name: string; grams: number };
 
-export type Goals = Macros;
+export type Goals = Macros & { waterMl: number; addBurned: boolean };
+
+export type DailyStats = Macros & {
+  date: string;
+  entryCount: number;
+  waterMl: number;
+  steps: number | null;
+  activeKcal: number | null;
+  distanceKm: number | null;
+  flights: number | null;
+};
+
+export type WaterDay = { totalMl: number; entries: { id: number; ml: number; name: string | null }[] };
 
 export type User = { id: number; email: string; name: string };
 

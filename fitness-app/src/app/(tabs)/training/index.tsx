@@ -3,6 +3,7 @@ import { SymbolView } from 'expo-symbols';
 import { useEffect, useState } from 'react';
 import { Alert, Pressable, StyleSheet, View } from 'react-native';
 
+import { ActivityOverview } from '@/components/activity-overview';
 import { AppText } from '@/components/app-text';
 import { Card } from '@/components/card';
 import { EmptyState, ErrorNotice, List, Row } from '@/components/list';
@@ -41,6 +42,7 @@ export default function TrainingScreen() {
       </Stack.Toolbar>
 
       {draft && <ActiveWorkoutBanner draft={draft} />}
+      <ActivityOverview />
       {templates.error && <ErrorNotice message={templates.error} onRetry={templates.reload} />}
 
       <Section title="Vorlagen">

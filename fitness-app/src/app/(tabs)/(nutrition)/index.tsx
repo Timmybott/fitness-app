@@ -10,11 +10,13 @@ import { IconButton } from '@/components/icon-button';
 import { ErrorNotice } from '@/components/list';
 import { ProgressRing } from '@/components/progress-ring';
 import { Screen } from '@/components/screen';
+import { WaterCard } from '@/components/water-card';
 import { Colors, Spacing } from '@/constants/theme';
 import { api, invalidate, useApi } from '@/lib/api';
 import { formatDateKey, shiftDateKey, toDateKey } from '@/lib/date';
 import { formatNumber } from '@/lib/format';
 import { deleteEntryFromHealth, useTodayActivity } from '@/lib/health';
+import { startPhotoEntry } from '@/lib/photo';
 import { MEALS, sumMacros, type Entry, type Goals, type HealthToday, type Macros, type Meal } from '@/lib/types';
 
 export default function NutritionScreen() {
@@ -33,10 +35,30 @@ export default function NutritionScreen() {
       </Stack.Toolbar>
       <Stack.Toolbar placement="right">
         <Stack.Toolbar.Button icon="calendar" hidden={isToday} onPress={() => setDate(toDateKey(new Date()))} />
-        <Stack.Toolbar.Button
-          icon="barcode.viewfinder"
-          onPress={() => router.push({ pathname: '/scan', params: { date, meal: guessMeal() } })}
-        />
+        <Stack.Toolbar.Menu icon="plus">
+          <Stack.Toolbar.MenuAction icon="magnifyingglass" onPress={() => router.push({ pathname: '/add-food', params: { date, meal: guessMeal() } })}>
+            Lebensmittel suchen
+          </Stack.Toolbar.MenuAction>
+          <Stack.Toolbar.MenuAction icon="barcode.viewfinder" onPress={() => router.push({ pathname: '/scan', params: { date, meal: guessMeal() } })}>
+            Barcode scannen
+          </Stack.Toolbar.MenuAction>
+          <Stack.Toolbar.MenuAction icon="camera.fill" onPress={() => startPhotoEntry(date, guessMeal())}>
+            Foto
+          </Stack.Toolbar.MenuAction>
+          <Stack.Toolbar.MenuAction icon="text.book.closed.fill" onPress={() => router.push('/recipe-scan')}>
+            Rezept per Foto
+          </Stack.Toolbar.MenuAction>
+          <Stack.Toolbar.MenuAction
+            icon="square.and.pencil"
+            onPress={() => router.push({ pathname: '/add-food', params: { date, meal: guessMeal(), manual: '1' } })}>
+            Manuell eingeben
+          </Stack.Toolbar.MenuAction>
+          <Stack.Toolbar.MenuAction
+            icon="drop.fill"
+            onPress={() => router.push({ pathname: '/add-food', params: { date, meal: 'snack', mode: 'drink' } })}>
+            Getränk
+          </Stack.Toolbar.MenuAction>
+        </Stack.Toolbar.Menu>
       </Stack.Toolbar>
 
       {entriesQuery.error && <ErrorNotice message={entriesQuery.error} onRetry={entriesQuery.reload} />}
@@ -44,6 +66,7 @@ export default function NutritionScreen() {
       {MEALS.map((meal) => (
         <MealSection key={meal.key} meal={meal} date={date} entries={entries.filter((e) => e.meal === meal.key)} />
       ))}
+      {goals && <WaterCard date={date} goalMl={goals.waterMl} />}
     </Screen>
   );
 }
@@ -62,7 +85,10 @@ function SummaryCard({ totals, goals, showActivity }: { totals: Macros; goals: G
   const native = useTodayActivity();
   const synced = useApi<HealthToday | null>(showActivity && !native ? '/health/today' : null).data;
   const activity = native ?? synced;
-  const remaining = Math.round(goals.kcal - totals.kcal);
+  // Optionally, calories burned through activity raise today's budget.
+  const burned = showActivity && goals.addBurned ? Math.round(activity?.activeKcal ?? 0) : 0;
+  const budget = goals.kcal + burned;
+  const remaining = Math.round(budget - totals.kcal);
   const over = remaining < 0;
 
   return (
@@ -70,7 +96,7 @@ function SummaryCard({ totals, goals, showActivity }: { totals: Macros; goals: G
       <ProgressRing
         size={140}
         stroke={13}
-        progress={totals.kcal / goals.kcal}
+        progress={totals.kcal / budget}
         color={over ? Colors.danger : Colors.kcal}
         trackColor={Colors.cardElevated}>
         <AppText type="number">{Math.abs(remaining)}</AppText>
@@ -81,7 +107,7 @@ function SummaryCard({ totals, goals, showActivity }: { totals: Macros; goals: G
 
       <View style={styles.summaryRight}>
         <AppText type="caption" color={Colors.textSecondary}>
-          {Math.round(totals.kcal)} von {goals.kcal} kcal
+          {Math.round(totals.kcal)} von {budget} kcal{burned ? ` (inkl. ${burned} verbrannt)` : ''}
         </AppText>
         <MacroBar label="Protein" value={totals.protein} goal={goals.protein} color={Colors.protein} />
         <MacroBar label="Kohlenhydrate" value={totals.carbs} goal={goals.carbs} color={Colors.carbs} />
@@ -142,15 +168,20 @@ function MealSection({ meal, date, entries }: { meal: (typeof MEALS)[number]; da
   return (
     <Card style={styles.meal}>
       <View style={styles.mealHeader}>
-        <SymbolView name={meal.icon} size={18} tintColor={Colors.accent} />
-        <AppText type="headline" style={styles.flex}>
-          {meal.label}
-        </AppText>
-        {kcal > 0 && (
-          <AppText type="caption" color={Colors.textSecondary}>
-            {kcal} kcal
-          </AppText>
-        )}
+        {/* Tapping the meal name opens its sheet with totals and all entries. */}
+        <Pressable
+          onPress={() => router.push({ pathname: '/meal', params: { date, meal: meal.key } })}
+          style={({ pressed }) => [styles.mealTitle, pressed && styles.pressed]}>
+          <SymbolView name={meal.icon} size={18} tintColor={Colors.accent} />
+          <AppText type="headline">{meal.label}</AppText>
+          <SymbolView name="chevron.right" size={12} weight="semibold" tintColor={Colors.textTertiary} />
+          <View style={styles.flex} />
+          {kcal > 0 && (
+            <AppText type="caption" color={Colors.textSecondary}>
+              {kcal} kcal
+            </AppText>
+          )}
+        </Pressable>
         <IconButton icon="plus" filled onPress={() => router.push({ pathname: '/add-food', params: { date, meal: meal.key } })} />
       </View>
 
@@ -181,6 +212,7 @@ const styles = StyleSheet.create({
   barFill: { height: '100%', borderRadius: 3 },
   meal: { gap: Spacing.two },
   mealHeader: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two },
+  mealTitle: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: Spacing.two },
   entry: {
     flexDirection: 'row',
     alignItems: 'center',

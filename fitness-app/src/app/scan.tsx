@@ -19,7 +19,7 @@ type State =
   | { kind: 'notFound'; code: string };
 
 export default function ScanScreen() {
-  const { date, meal } = useLocalSearchParams<{ date: string; meal: Meal }>();
+  const { date, meal, mode } = useLocalSearchParams<{ date: string; meal: Meal; mode?: 'drink' }>();
   const insets = useSafeAreaInsets();
   const [permission, requestPermission] = useCameraPermissions();
   const [state, setState] = useState<State>({ kind: 'scanning' });
@@ -53,7 +53,7 @@ export default function ScanScreen() {
         <View style={styles.sheetHeader}>
           <IconButton icon="xmark" onPress={() => router.back()} />
         </View>
-        <AmountForm food={state.food} date={date} initialMeal={meal} onSaved={() => router.back()} />
+        <AmountForm drink={mode === 'drink'} food={state.food} date={date} initialMeal={meal} onSaved={() => router.back()} />
       </ScrollView>
     );
   }

@@ -13,14 +13,16 @@ import { Screen, Section } from '@/components/screen';
 import { Colors, Radius, Spacing } from '@/constants/theme';
 import { api, invalidate, useApi } from '@/lib/api';
 import { logEntryToHealth } from '@/lib/health';
-import { takeFoodPhoto, type PickedPhoto } from '@/lib/photo';
+import { bridge } from '@/lib/bridge';
+import { pickPhoto, type PickedPhoto } from '@/lib/photo';
 import { MEALS, parseNum, portionToFood, sumMacros, type Entry, type Meal, type PortionItem } from '@/lib/types';
 
-type Result = { items: PortionItem[]; note: string | null };
-type EditableItem = PortionItem & { amount: string; include: boolean };
+type AiItem = PortionItem & { isWater?: boolean };
+type Result = { items: AiItem[]; note: string | null };
+type EditableItem = AiItem & { amount: string; include: boolean };
 
 export default function PhotoScreen() {
-  const { date, meal: initialMeal } = useLocalSearchParams<{ date: string; meal: Meal }>();
+  const { date, meal: initialMeal, mode } = useLocalSearchParams<{ date: string; meal: Meal; mode?: 'food' | 'drink' }>();
   const status = useApi<{ enabled: boolean }>('/ai/status').data;
   const [photo, setPhoto] = useState<PickedPhoto | null>(null);
   const [items, setItems] = useState<EditableItem[] | null>(null);
@@ -28,14 +30,8 @@ export default function PhotoScreen() {
   const [meal, setMeal] = useState<Meal>(initialMeal);
   const [busy, setBusy] = useState(false);
 
-  const analyze = async () => {
+  const analyze = async (picked: PickedPhoto) => {
     try {
-      const picked = await takeFoodPhoto();
-      // Cancelling the camera before any photo was taken leaves the screen.
-      if (!picked) {
-        if (!photo) router.back();
-        return;
-      }
       setPhoto(picked);
       setItems(null);
       setBusy(true);
@@ -51,10 +47,10 @@ export default function PhotoScreen() {
   };
 
   // Macros scale with the amount the user corrected.
-  const scaled = (i: EditableItem): PortionItem => {
+  const scaled = (i: EditableItem): AiItem => {
     const g = parseNum(i.amount);
     const f = i.grams > 0 ? g / i.grams : 0;
-    return { name: i.name, grams: g, kcal: i.kcal * f, protein: i.protein * f, carbs: i.carbs * f, fat: i.fat * f };
+    return { name: i.name, grams: g, kcal: i.kcal * f, protein: i.protein * f, carbs: i.carbs * f, fat: i.fat * f, isWater: i.isWater };
   };
   const chosen = (items ?? []).filter((i) => i.include && parseNum(i.amount) > 0).map(scaled);
   const total = sumMacros(chosen);
@@ -63,6 +59,11 @@ export default function PhotoScreen() {
     setBusy(true);
     try {
       for (const item of chosen) {
+        // Plain water goes to the water tracker (grams = ml), everything else into the diary.
+        if (item.isWater) {
+          await api.post('/water', { date, ml: Math.round(item.grams), name: item.name });
+          continue;
+        }
         const entry = await api.post<Entry>('/entries', { food: portionToFood(item), grams: item.grams, date, meal, saveFood: false });
         logEntryToHealth(entry);
       }
@@ -75,14 +76,25 @@ export default function PhotoScreen() {
     }
   };
 
-  // Open the camera right away once we know the AI is set up (ref guards against double-mount in dev).
+  // The photo was taken before this screen opened (see startPhotoEntry); analyze it right away.
   const started = useRef(false);
   useEffect(() => {
     if (status?.enabled && !started.current) {
       started.current = true;
-      analyze();
+      const pending = bridge.takePhoto();
+      // Started after the effect (not synchronously inside it) to avoid a cascading render.
+      if (pending) Promise.resolve().then(() => analyze(pending));
     }
   });
+
+  const retake = async () => {
+    try {
+      const picked = await pickPhoto('camera');
+      if (picked) analyze(picked);
+    } catch (e) {
+      Alert.alert('Foto', (e as Error).message);
+    }
+  };
 
   const update = (index: number, patch: Partial<EditableItem>) =>
     setItems((list) => list && list.map((x, i) => (i === index ? { ...x, ...patch } : x)));
@@ -90,7 +102,7 @@ export default function PhotoScreen() {
   if (status && !status.enabled) {
     return (
       <Screen>
-        <Stack.Screen options={{ title: 'Foto-Analyse' }} />
+        <Stack.Screen options={{ title: mode === 'drink' ? 'Getränk' : 'Foto' }} />
         <Card>
           <EmptyState
             icon="sparkles"
@@ -104,9 +116,13 @@ export default function PhotoScreen() {
 
   return (
     <Screen>
-      <Stack.Screen options={{ title: 'Foto-Analyse' }} />
+      <Stack.Screen options={{ title: mode === 'drink' ? 'Getränk' : 'Foto' }} />
 
-      {photo && <Image source={{ uri: photo.uri }} style={styles.image} contentFit="cover" />}
+      {photo ? (
+        <Image source={{ uri: photo.uri }} style={styles.image} contentFit="cover" />
+      ) : (
+        !busy && <PrimaryButton title="Foto aufnehmen" onPress={retake} />
+      )}
 
       {busy && !items && (
         <View style={styles.busy}>
@@ -171,7 +187,7 @@ export default function PhotoScreen() {
             loading={busy}
           />
           <List>
-            <Row title="Neues Foto" icon="camera.fill" onPress={analyze} />
+            <Row title="Neues Foto" icon="camera.fill" onPress={retake} />
           </List>
         </>
       )}

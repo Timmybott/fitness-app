@@ -1,4 +1,4 @@
-import { router, useLocalSearchParams } from 'expo-router';
+import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { SymbolView } from 'expo-symbols';
 import { useState } from 'react';
 import { Pressable, StyleSheet, TextInput, View } from 'react-native';
@@ -11,20 +11,26 @@ import { List, PrimaryButton, Row } from '@/components/list';
 import { Screen, Section } from '@/components/screen';
 import { Colors, Radius, Spacing } from '@/constants/theme';
 import { api, useApi } from '@/lib/api';
+import { startPhotoEntry } from '@/lib/photo';
 import { parseNum, recipeToFood, sumMacros, type Food, type Meal, type Recipe } from '@/lib/types';
 
 type Selection = { food: Food; recipeId?: number };
 
 export default function AddFoodScreen() {
-  const { date, meal } = useLocalSearchParams<{ date: string; meal: Meal }>();
+  const params = useLocalSearchParams<{ date: string; meal: Meal; mode?: 'drink'; manual?: string }>();
+  const { date, meal } = params;
+  const drink = params.mode === 'drink';
   const [selected, setSelected] = useState<Selection | null>(null);
-  const [manual, setManual] = useState(false);
-  const recipes = useApi<Recipe[]>('/recipes').data ?? [];
+  const [manual, setManual] = useState(params.manual === '1');
+  const recipes = useApi<Recipe[]>(drink ? null : '/recipes').data ?? [];
+  const title = <Stack.Screen options={{ title: drink ? 'Getränk' : 'Hinzufügen' }} />;
 
   if (selected) {
     return (
       <Screen>
+        {title}
         <AmountForm
+          drink={drink}
           food={selected.food}
           date={date}
           initialMeal={meal}
@@ -41,6 +47,7 @@ export default function AddFoodScreen() {
   if (manual) {
     return (
       <Screen>
+        {title}
         <ManualFoodForm onDone={(food) => setSelected({ food })} />
       </Screen>
     );
@@ -48,6 +55,7 @@ export default function AddFoodScreen() {
 
   return (
     <Screen>
+      {title}
       <FoodSearch onSelect={(food) => setSelected({ food })}>
         {(q) => {
           const matching = recipes.filter((r) => r.name.toLowerCase().includes(q.toLowerCase()));
@@ -55,12 +63,13 @@ export default function AddFoodScreen() {
             <>
               {!q && (
                 <View style={styles.actions}>
-                  <ActionTile icon="barcode.viewfinder" label="Barcode" onPress={() => router.replace({ pathname: '/scan', params: { date, meal } })} />
-                  <ActionTile icon="camera.fill" label="Foto (KI)" onPress={() => router.replace({ pathname: '/photo', params: { date, meal } })} />
+                  <ActionTile icon="barcode.viewfinder" label="Barcode" onPress={() => router.replace({ pathname: '/scan', params: { date, meal, mode: params.mode } })} />
+                  <ActionTile icon="camera.fill" label="Foto" onPress={() => startPhotoEntry(date, meal, drink ? 'drink' : 'food')} />
+                  {!drink && <ActionTile icon="text.book.closed.fill" label="Rezept" onPress={() => router.push('/recipe-scan')} />}
                   <ActionTile icon="square.and.pencil" label="Manuell" onPress={() => setManual(true)} />
                 </View>
               )}
-              {(matching.length > 0 || !q) && (
+              {!drink && (matching.length > 0 || !q) && (
                 <Section title="Rezepte">
                   <List>
                     {matching.map((r) => {

@@ -24,6 +24,8 @@ export default function CardioScreen() {
   const valid = parseNum(minutes) > 0;
 
   const save = async () => {
+    if (saving) return;
+    if (!valid) return Alert.alert('Dauer fehlt', 'Trag ein, wie viele Minuten du trainiert hast.');
     setSaving(true);
     try {
       const c = await api.post<Cardio>('/cardio', {
@@ -48,7 +50,7 @@ export default function CardioScreen() {
   return (
     <ScrollView style={styles.flex} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
       <Stack.Toolbar placement="right">
-        <Stack.Toolbar.Button variant="done" onPress={save} disabled={!valid || saving}>
+        <Stack.Toolbar.Button variant="done" onPress={save}>
           Sichern
         </Stack.Toolbar.Button>
       </Stack.Toolbar>

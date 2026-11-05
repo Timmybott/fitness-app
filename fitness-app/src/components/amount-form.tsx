@@ -8,6 +8,7 @@ import { Chip } from '@/components/chip';
 import { PrimaryButton } from '@/components/list';
 import { Colors, Spacing } from '@/constants/theme';
 import { api, invalidate } from '@/lib/api';
+import { isPlainWater } from '@/lib/bridge';
 import { logEntryToHealth } from '@/lib/health';
 import { MEALS, parseNum, scaleMacros, type Entry, type Food, type Meal } from '@/lib/types';
 
@@ -18,10 +19,14 @@ type Props = {
   onSaved: () => void;
   /** false for recipes, which shouldn't be added to the "recent foods" list. */
   saveFood?: boolean;
+  /** Drinks are measured in ml (1 ml = 1 g); plain water goes to the water tracker instead of the diary. */
+  drink?: boolean;
 };
 
 /** Pick amount and meal for a food, preview its macros, and log it. */
-export function AmountForm({ food, date, initialMeal, onSaved, saveFood = true }: Props) {
+export function AmountForm({ food, date, initialMeal, onSaved, saveFood = true, drink = false }: Props) {
+  const water = isPlainWater(food);
+  const unit = drink || water ? 'ml' : 'g';
   const [grams, setGrams] = useState(String(food.servingGrams ?? 100));
   const [meal, setMeal] = useState<Meal>(initialMeal);
   const [saving, setSaving] = useState(false);
@@ -32,8 +37,12 @@ export function AmountForm({ food, date, initialMeal, onSaved, saveFood = true }
   const save = async () => {
     setSaving(true);
     try {
-      const entry = await api.post<Entry>('/entries', { food, grams: amount, date, meal, saveFood });
-      logEntryToHealth(entry);
+      if (water) {
+        await api.post('/water', { date, ml: Math.round(amount), name: food.name });
+      } else {
+        const entry = await api.post<Entry>('/entries', { food, grams: amount, date, meal, saveFood });
+        logEntryToHealth(entry);
+      }
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       invalidate();
       onSaved();
@@ -55,28 +64,38 @@ export function AmountForm({ food, date, initialMeal, onSaved, saveFood = true }
           Menge
         </AppText>
         <TextInput value={grams} onChangeText={setGrams} keyboardType="decimal-pad" selectTextOnFocus style={styles.input} />
-        <AppText color={Colors.textSecondary}>g</AppText>
-      </Card>
-
-      {food.servingGrams ? (
-        <View style={styles.chips}>
-          <Chip label={`1 Portion (${food.servingGrams} g)`} onPress={() => setGrams(String(food.servingGrams))} />
-          <Chip label="100 g" onPress={() => setGrams('100')} />
-        </View>
-      ) : null}
-
-      <Card style={styles.macros}>
-        <MacroValue label="kcal" value={m.kcal} color={Colors.kcal} />
-        <MacroValue label="Protein" value={m.protein} color={Colors.protein} unit="g" />
-        <MacroValue label="Kohlenh." value={m.carbs} color={Colors.carbs} unit="g" />
-        <MacroValue label="Fett" value={m.fat} color={Colors.fat} unit="g" />
+        <AppText color={Colors.textSecondary}>{unit}</AppText>
       </Card>
 
       <View style={styles.chips}>
-        {MEALS.map((x) => (
-          <Chip key={x.key} label={x.label} active={meal === x.key} onPress={() => setMeal(x.key)} />
-        ))}
+        {food.servingGrams ? (
+          <Chip label={`1 Portion (${food.servingGrams} ${unit})`} onPress={() => setGrams(String(food.servingGrams))} />
+        ) : null}
+        {unit === 'ml' ? (
+          [250, 330, 500, 1000].map((ml) => <Chip key={ml} label={`${ml} ml`} onPress={() => setGrams(String(ml))} />)
+        ) : (
+          <Chip label="100 g" onPress={() => setGrams('100')} />
+        )}
       </View>
+
+      {water ? (
+        <AppText color={Colors.textSecondary}>Wasser wird direkt zu deinem Wasserstand hinzugefügt.</AppText>
+      ) : (
+        <>
+          <Card style={styles.macros}>
+            <MacroValue label="kcal" value={m.kcal} color={Colors.kcal} />
+            <MacroValue label="Protein" value={m.protein} color={Colors.protein} unit="g" />
+            <MacroValue label="Kohlenh." value={m.carbs} color={Colors.carbs} unit="g" />
+            <MacroValue label="Fett" value={m.fat} color={Colors.fat} unit="g" />
+          </Card>
+
+          <View style={styles.chips}>
+            {MEALS.map((x) => (
+              <Chip key={x.key} label={x.label} active={meal === x.key} onPress={() => setMeal(x.key)} />
+            ))}
+          </View>
+        </>
+      )}
 
       <PrimaryButton title="Hinzufügen" onPress={save} disabled={amount <= 0} loading={saving} />
     </View>
