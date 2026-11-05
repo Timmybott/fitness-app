@@ -263,12 +263,11 @@ def build() -> dict:
         'distanceKm': today_values('Walking + Running Distance'),
     })
 
-    # Often empty on a given day (no workout, no stairs, not weighed): last, so they can't block the rest.
-    get_url((server_ref, '/health/sync'), 'POST', token_ref, {
-        'exerciseMin': today_values('Exercise Time'),  # Shortcuts' name for exercise minutes
-        'flights': today_values('Flights Climbed'),
-    })
+    # Often empty on a given day, and an empty search stops the shortcut: one request each, most useful
+    # first. Exercise time is last because without an Apple Watch workout it is usually empty.
     get_url((server_ref, '/health/sync'), 'POST', token_ref, {'weightKg': today_values('Weight')})
+    get_url((server_ref, '/health/sync'), 'POST', token_ref, {'flights': today_values('Flights Climbed')})
+    get_url((server_ref, '/health/sync'), 'POST', token_ref, {'exerciseMin': today_values('Exercise Time')})  # = exercise minutes
 
     return {
         'WFWorkflowActions': actions,
