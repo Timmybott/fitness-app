@@ -2,7 +2,7 @@ import Storage from 'expo-sqlite/kv-store';
 import { useSyncExternalStore } from 'react';
 
 import { api, invalidate } from '@/lib/api';
-import { strengthKcal } from '@/lib/calories';
+import { strengthKcal, type Body } from '@/lib/calories';
 import { logWorkoutToHealth } from '@/lib/health';
 import { parseNum, type LastSets, type Template } from '@/lib/types';
 
@@ -78,6 +78,10 @@ export function useDraft() {
   );
 }
 
+export function getDraft() {
+  return draft;
+}
+
 export function updateDraft(fn: (d: Draft) => Draft) {
   if (draft) set(fn(draft));
 }
@@ -151,18 +155,18 @@ export function completedSets(d: Draft) {
   );
 }
 
-/** Estimated calories of the completed sets (see lib/calories). */
-export function draftKcal(d: Draft, bodyKg: number) {
+/** Estimated active calories of the completed sets over the training time so far (see lib/calories). */
+export function draftKcal(d: Draft, body: Body, now = Date.now()) {
   const sets = d.exercises.flatMap((e) => e.sets.map((s, i) => ({ s, i, e })).filter(({ s }) => s.done).map(({ e, i }) => ({ name: e.name, ...effectiveSet(e, i) })));
-  return strengthKcal(sets, bodyKg);
+  return strengthKcal(sets, body, durationMs(d, now));
 }
 
-export async function finishWorkout(bodyKg: number) {
+export async function finishWorkout(body: Body) {
   if (!draft) return;
   const finishedAt = new Date();
   // The workout spans the time the clock actually ran (at least a minute).
   const startedAt = new Date(finishedAt.getTime() - Math.max(60000, durationMs(draft, finishedAt.getTime())));
-  const kcal = Math.round(draftKcal(draft, bodyKg));
+  const kcal = Math.round(draftKcal(draft, body, finishedAt.getTime()));
   const { id } = await api.post<{ id: number }>('/workouts', {
     name: draft.name,
     templateId: draft.templateId,

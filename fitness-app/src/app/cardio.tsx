@@ -8,13 +8,13 @@ import { Chip } from '@/components/chip';
 import { List } from '@/components/list';
 import { Colors, Spacing } from '@/constants/theme';
 import { api, invalidate } from '@/lib/api';
-import { cardioKcal, CARDIO_TYPES, useBodyWeight, type CardioType } from '@/lib/calories';
+import { cardioKcal, CARDIO_TYPES, useBody, type CardioType } from '@/lib/calories';
 import { toDateKey } from '@/lib/date';
 import { logWorkoutToHealth } from '@/lib/health';
 import { parseNum, type Cardio } from '@/lib/types';
 
 export default function CardioScreen() {
-  const bodyKg = useBodyWeight();
+  const body = useBody();
   const [type, setType] = useState<CardioType>('Laufen');
   const [minutes, setMinutes] = useState('');
   const [km, setKm] = useState('');
@@ -22,7 +22,7 @@ export default function CardioScreen() {
   const [saving, setSaving] = useState(false);
 
   // Shown as placeholder and used when no calories are entered.
-  const estimate = Math.round(cardioKcal(type, parseNum(minutes), parseNum(km), bodyKg));
+  const estimate = Math.round(cardioKcal(type, parseNum(minutes), parseNum(km), body));
 
   const save = async () => {
     if (saving) return;
@@ -71,7 +71,7 @@ export default function CardioScreen() {
         <Field label="Kalorien" unit="kcal" value={kcal} onChange={setKcal} placeholder={estimate ? String(estimate) : '0'} />
       </List>
       <AppText type="caption" color={Colors.textSecondary} style={styles.hint}>
-        Ohne Angabe schätzt die App die Kalorien aus Dauer, Distanz und deinem Gewicht ({Math.round(bodyKg)} kg).
+        Ohne Angabe schätzt die App die aktiven Kalorien aus Dauer, Distanz und deinem Gewicht ({Math.round(body.kg)} kg).
       </AppText>
     </ScrollView>
   );

@@ -61,6 +61,11 @@ function RootStack() {
         />
         <Stack.Screen name="workout" options={{ presentation: 'fullScreenModal', headerShown: true, gestureEnabled: false }} />
         <Stack.Screen name="template" options={{ presentation: 'modal', headerShown: true }} />
+        <Stack.Screen
+          name="templates"
+          options={{ presentation: 'formSheet', headerShown: true, sheetAllowedDetents: [0.6, 1], sheetGrabberVisible: true }}
+        />
+        <Stack.Screen name="workout-log" options={{ presentation: 'modal', headerShown: true }} />
         <Stack.Screen name="workout-detail" options={{ presentation: 'modal', headerShown: true }} />
         <Stack.Screen name="cardio" options={{ presentation: 'modal', headerShown: true, title: 'Cardio' }} />
       </Stack.Protected>

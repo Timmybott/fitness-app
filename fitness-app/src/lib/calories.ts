@@ -2,54 +2,82 @@ import { useApi } from '@/lib/api';
 import { type BodyWeight } from '@/lib/types';
 
 /**
- * Calorie estimates (gross kcal, like fitness trackers show for workouts).
+ * Calorie estimates as ACTIVE energy (like Apple Health's "Aktive Energie"): what the training burns
+ * on top of the resting metabolism. That is the number that may be added to the daily calorie goal
+ * without counting the resting metabolism twice.
  *
- * Cardio uses MET values from the Compendium of Physical Activities: kcal = MET × body kg × hours.
- * Running uses the well-established ~1 kcal per kg per km when a distance is given.
+ * Gross energy uses MET values from the Compendium of Physical Activities (1 MET ≈ 1 kcal per kg and
+ * hour); the resting share is then subtracted. Resting energy comes from Mifflin-St Jeor when the
+ * body height is known (age 30 and a male/female average until age and sex are in the profile),
+ * else from the 1 kcal/kg/h convention.
  *
- * Strength training per completed set:
- *   - active part: MET 6 (vigorous resistance training) × kg × time under tension (≈ 4 s per rep)
- *   - mechanical work: lifted mass × g × range of motion × reps, at ~25 % muscular efficiency
+ * Cardio: MET by type and speed; running from distance (~1 kcal per kg and km) when one is given.
+ *
+ * Strength training, from the logged sets and the workout duration:
+ *   - lifting: MET 6 (vigorous resistance training) during time under tension (~3.5 s per rep)
+ *   - mechanical work: lifted mass × g × range of motion × reps at ~25 % muscular efficiency
  *     (lifted mass = weight + the share of body weight moved in that exercise)
- *   - rest between sets: MET 2 × kg × ~90 s
- * A typical 15-set session for an 80 kg person lands around 150–250 kcal, in line with measured values.
+ *   - between sets: MET 2 (elevated heart rate). The rest time is the workout duration minus the time
+ *     under tension, but at most 4 min per set (longer breaks count as standing around, MET 1.3).
+ *     Without a duration, 90 s per set is assumed.
+ * A one-hour, 15-set session for an 80 kg person comes out around 150–200 active kcal.
  */
+
+export type Body = { kg: number; heightCm?: number | null };
 
 const DEFAULT_BODY_KG = 75;
 
-/** Latest body weight from the app (falls back to 75 kg). */
-export function useBodyWeight() {
+/** Latest body weight from the app (falls back to 75 kg). Height follows once the profile has it. */
+export function useBody(): Body {
   const weights = useApi<BodyWeight[]>('/weights?days=365').data;
-  return weights?.at(-1)?.kg ?? DEFAULT_BODY_KG;
+  const last = weights ? weights.at(-1) : undefined;
+  return { kg: last ? last.kg : DEFAULT_BODY_KG };
+}
+
+/** Resting energy in kcal per hour. */
+export function restingKcalPerHour(body: Body) {
+  if (body.heightCm && body.heightCm > 100) {
+    // Mifflin-St Jeor: 10·kg + 6.25·cm − 5·age + s (s = +5 male, −161 female; average −78), age 30.
+    return Math.max(30, (10 * body.kg + 6.25 * body.heightCm - 5 * 30 - 78) / 24);
+  }
+  return body.kg;
+}
+
+/** Active kcal of `hours` at a given (gross) MET. */
+function activeKcal(met: number, hours: number, body: Body) {
+  return Math.max(0, met * body.kg * hours - restingKcalPerHour(body) * hours);
 }
 
 export const CARDIO_TYPES = ['Laufen', 'Fahrrad', 'Stairmaster', 'Crosstrainer'] as const;
 export type CardioType = (typeof CARDIO_TYPES)[number];
 
-export function cardioKcal(type: string, minutes: number, km: number, bodyKg: number) {
+export function cardioKcal(type: string, minutes: number, km: number, body: Body) {
   const hours = minutes / 60;
   if (hours <= 0) return 0;
   const speed = km > 0 ? km / hours : 0;
   switch (type) {
-    case 'Laufen':
-      return km > 0 ? bodyKg * km * 1.0 : 9.8 * bodyKg * hours;
+    case 'Laufen': {
+      if (km <= 0) return activeKcal(9.8, hours, body);
+      return Math.max(0, body.kg * km - restingKcalPerHour(body) * hours);
+    }
     case 'Fahrrad': {
       const met = speed === 0 ? 7 : speed < 16 ? 4 : speed < 19 ? 6.8 : speed < 22 ? 8 : speed < 25 ? 10 : 12;
-      return met * bodyKg * hours;
+      return activeKcal(met, hours, body);
     }
     case 'Stairmaster':
-      return 9 * bodyKg * hours;
+      return activeKcal(9, hours, body);
     case 'Crosstrainer':
-      return 5 * bodyKg * hours;
+      return activeKcal(5, hours, body);
     default:
-      return 6 * bodyKg * hours;
+      return activeKcal(6, hours, body);
   }
 }
 
 const G = 9.81;
 const EFFICIENCY = 0.25;
-const SECONDS_PER_REP = 4;
-const REST_SECONDS = 90;
+const SECONDS_PER_REP = 3.5;
+const DEFAULT_REST_SECONDS = 90;
+const MAX_REST_SECONDS = 240;
 
 /** Range of motion (m) and share of body weight moved, by exercise name. */
 const EXERCISE_PROFILES: [RegExp, { rom: number; body: number }][] = [
@@ -75,18 +103,38 @@ function profile(exerciseName: string) {
   return EXERCISE_PROFILES.find(([re]) => re.test(exerciseName))?.[1] ?? { rom: 0.4, body: 0 };
 }
 
-export function strengthSetKcal(exerciseName: string, weightKg: number, reps: number, bodyKg: number) {
-  if (reps <= 0) return 0;
-  // Planks etc. are logged as seconds in the reps field.
-  if (/plank|sekunden/i.test(exerciseName)) return (4 * bodyKg * reps) / 3600 + (2 * bodyKg * REST_SECONDS) / 3600;
-  const p = profile(exerciseName);
-  const active = (6 * bodyKg * (reps * SECONDS_PER_REP)) / 3600;
-  const mass = weightKg + p.body * bodyKg;
-  const work = (mass * G * p.rom * reps) / (4184 * EFFICIENCY);
-  const rest = (2 * bodyKg * REST_SECONDS) / 3600;
-  return active + work + rest;
+type LoggedSet = { name: string; weight: number; reps: number };
+
+/** Time under tension (s); planks etc. are logged as seconds in the reps field. */
+function tensionSeconds(s: LoggedSet) {
+  return /plank|sekunden/i.test(s.name) ? s.reps : s.reps * SECONDS_PER_REP;
 }
 
-export function strengthKcal(sets: { name: string; weight: number; reps: number }[], bodyKg: number) {
-  return sets.reduce((sum, s) => sum + strengthSetKcal(s.name, s.weight, s.reps, bodyKg), 0);
+/** Gross kcal of lifting one set (without the rest after it). */
+function liftKcal(s: LoggedSet, body: Body) {
+  if (s.reps <= 0) return 0;
+  const seconds = tensionSeconds(s);
+  if (/plank|sekunden/i.test(s.name)) return (4 * body.kg * seconds) / 3600;
+  const p = profile(s.name);
+  const mass = s.weight + p.body * body.kg;
+  const work = (mass * G * p.rom * s.reps) / (4184 * EFFICIENCY);
+  return (6 * body.kg * seconds) / 3600 + work;
+}
+
+/**
+ * Active kcal of a strength workout. `durationMs` is the training time (live clock or entered
+ * afterwards); without it a 90 s rest per set is assumed.
+ */
+export function strengthKcal(sets: LoggedSet[], body: Body, durationMs?: number) {
+  const done = sets.filter((s) => s.reps > 0);
+  if (done.length === 0) return 0;
+  const tension = done.reduce((t, s) => t + tensionSeconds(s), 0);
+  const total = durationMs && durationMs > 0 ? Math.max(durationMs / 1000, tension) : tension + done.length * DEFAULT_REST_SECONDS;
+  const rest = total - tension;
+  const activeRest = Math.min(rest, done.length * MAX_REST_SECONDS);
+  const gross =
+    done.reduce((k, s) => k + liftKcal(s, body), 0) +
+    (2 * body.kg * activeRest) / 3600 +
+    (1.3 * body.kg * (rest - activeRest)) / 3600;
+  return Math.max(0, gross - (restingKcalPerHour(body) * total) / 3600);
 }

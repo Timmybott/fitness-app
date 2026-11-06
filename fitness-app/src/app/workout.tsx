@@ -11,7 +11,7 @@ import { List, Row } from '@/components/list';
 import { SetTable } from '@/components/set-table';
 import { Colors, Radius, Spacing } from '@/constants/theme';
 import { bridge } from '@/lib/bridge';
-import { useBodyWeight } from '@/lib/calories';
+import { useBody } from '@/lib/calories';
 import { formatClock, formatKg } from '@/lib/format';
 import {
   addExerciseToDraft,
@@ -43,7 +43,7 @@ export default function WorkoutScreen() {
   const draft = useDraft();
   const [saving, setSaving] = useState(false);
   const now = useNow();
-  const bodyKg = useBodyWeight();
+  const body = useBody();
 
   // Leaving happens via finish/discard; if the draft disappears, close the screen.
   useEffect(() => {
@@ -74,7 +74,7 @@ export default function WorkoutScreen() {
         onPress: async () => {
           setSaving(true);
           try {
-            await finishWorkout(bodyKg);
+            await finishWorkout(body);
             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
             router.back();
           } catch (e) {
@@ -116,7 +116,7 @@ export default function WorkoutScreen() {
           </Pressable>
           <Stat label="Sätze" value={String(done.length)} />
           <Stat label="Volumen" value={formatKg(volume)} />
-          <Stat label="kcal" value={String(Math.round(draftKcal(draft, bodyKg)))} />
+          <Stat label="kcal" value={String(Math.round(draftKcal(draft, body, now)))} />
         </View>
 
         {draft.exercises.map((e, i) => (

@@ -8,13 +8,15 @@ import { AppText } from '@/components/app-text';
 import { Card } from '@/components/card';
 import { EmptyState, ErrorNotice, List, Row } from '@/components/list';
 import { Screen, Section } from '@/components/screen';
+import { TemplateCard } from '@/components/template-card';
 import { Colors, Radius, Spacing } from '@/constants/theme';
 import { api, invalidate, useApi } from '@/lib/api';
 import { formatDateKey } from '@/lib/date';
 import { formatDay, formatDuration, formatKg, formatNumber } from '@/lib/format';
 import { deleteWorkoutFromHealth } from '@/lib/health';
 import { type Cardio, type Template, type WorkoutSummary } from '@/lib/types';
-import { durationMs, isRunning, startWorkout, useDraft, type Draft } from '@/lib/workout-draft';
+import { beginWorkout } from '@/lib/start-workout';
+import { durationMs, isRunning, useDraft, type Draft } from '@/lib/workout-draft';
 
 export default function TrainingScreen() {
   const draft = useDraft();
@@ -22,23 +24,26 @@ export default function TrainingScreen() {
   const workouts = useApi<WorkoutSummary[]>('/workouts?limit=10');
   const cardio = useApi<Cardio[]>('/cardio').data ?? [];
 
-  const start = async (t: Template | null) => {
-    if (draft) {
-      Alert.alert('Es läuft schon ein Workout', 'Erst beenden oder verwerfen.', [
-        { text: 'Zum Workout', onPress: () => router.push('/workout') },
-        { text: 'OK', style: 'cancel' },
-      ]);
-      return;
-    }
-    await startWorkout(t);
-    router.push('/workout');
-  };
+  const start = (t: Template | null) => beginWorkout(t);
 
   return (
     <Screen>
       <Stack.Toolbar placement="right">
         <Stack.Toolbar.Button icon="figure.run" onPress={() => router.push('/cardio')} />
-        <Stack.Toolbar.Button icon="plus" onPress={() => router.push('/template')} />
+        <Stack.Toolbar.Menu icon="plus">
+          <Stack.Toolbar.MenuAction icon="square.and.pencil" onPress={() => router.push('/template')}>
+            Neue Vorlage
+          </Stack.Toolbar.MenuAction>
+          <Stack.Toolbar.MenuAction icon="list.bullet.clipboard" onPress={() => router.push('/templates')}>
+            Vorlage auswählen
+          </Stack.Toolbar.MenuAction>
+          <Stack.Toolbar.MenuAction icon="play.fill" onPress={() => start(null)}>
+            Freies Training starten
+          </Stack.Toolbar.MenuAction>
+          <Stack.Toolbar.MenuAction icon="clock.arrow.circlepath" onPress={() => router.push('/workout-log')}>
+            Nachträglich eintragen
+          </Stack.Toolbar.MenuAction>
+        </Stack.Toolbar.Menu>
       </Stack.Toolbar>
 
       {draft && <ActiveWorkoutBanner draft={draft} />}
@@ -129,38 +134,8 @@ function ActiveWorkoutBanner({ draft }: { draft: Draft }) {
   );
 }
 
-function TemplateCard({ template, onStart }: { template: Template; onStart: () => void }) {
-  const names = template.exercises.map((e) => e.name);
-  const sets = template.exercises.reduce((n, e) => n + e.sets, 0);
-
-  return (
-    <Pressable onPress={onStart} onLongPress={() => router.push({ pathname: '/template', params: { id: template.id } })}>
-      {({ pressed }) => (
-        <Card style={[styles.template, pressed && styles.pressed]}>
-          <View style={styles.flex}>
-            <AppText type="headline">{template.name}</AppText>
-            <AppText type="caption" color={Colors.textSecondary} numberOfLines={2}>
-              {names.length ? names.join(' · ') : 'Keine Übungen'}
-            </AppText>
-            <AppText type="caption" color={Colors.textTertiary}>
-              {template.exercises.length} Übungen · {sets} Sätze
-            </AppText>
-          </View>
-          <Pressable hitSlop={10} onPress={() => router.push({ pathname: '/template', params: { id: template.id } })}>
-            <SymbolView name="ellipsis.circle" size={24} tintColor={Colors.textSecondary} />
-          </Pressable>
-          <View style={styles.play}>
-            <SymbolView name="play.fill" size={16} tintColor={Colors.onAccent} />
-          </View>
-        </Card>
-      )}
-    </Pressable>
-  );
-}
-
 const styles = StyleSheet.create({
   flex: { flex: 1, gap: 2 },
-  pressed: { opacity: 0.7 },
   banner: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -169,14 +144,5 @@ const styles = StyleSheet.create({
     borderRadius: Radius.large,
     borderCurve: 'continuous',
     backgroundColor: Colors.accent,
-  },
-  template: { flexDirection: 'row', alignItems: 'center', gap: Spacing.three },
-  play: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: Colors.accent,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
 });
