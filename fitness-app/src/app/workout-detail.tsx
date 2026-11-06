@@ -40,6 +40,9 @@ export default function WorkoutDetailScreen() {
   return (
     <Screen>
       <Stack.Screen options={{ title: w?.name ?? 'Workout' }} />
+      <Stack.Toolbar placement="left">
+        <Stack.Toolbar.Button onPress={() => router.push({ pathname: '/workout-log', params: { id } })}>Bearbeiten</Stack.Toolbar.Button>
+      </Stack.Toolbar>
       <Stack.Toolbar placement="right">
         <Stack.Toolbar.Button variant="done" onPress={() => router.back()}>
           Fertig

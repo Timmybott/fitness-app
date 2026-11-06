@@ -18,6 +18,8 @@ export type Food = Macros & {
   brand?: string | null;
   barcode?: string | null;
   servingGrams?: number | null;
+  /** Own foods marked as favourite are listed first. */
+  favorite?: boolean;
   /** Reference foods (Swiss database) for drinks are per 100 ml. */
   unit?: 'g' | 'ml';
 };
@@ -70,7 +72,7 @@ export type Cardio = { id: number; date: string; type: string; minutes: number; 
 
 export type BodyWeight = { date: string; kg: number };
 
-export type BodyProfile = { heightCm: number | null };
+export type BodyProfile = { heightCm: number | null; birthYear: number | null; sex: 'm' | 'f' | null };
 
 export type DailyNutrition = Macros & { date: string };
 

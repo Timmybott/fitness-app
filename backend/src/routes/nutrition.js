@@ -63,7 +63,8 @@ const REFERENCE_ALIASES = {
   marille: ['aprikose'],
 };
 
-const FOOD_COLUMNS = 'id, name, brand, barcode, kcal, protein, carbs, fat, serving_grams AS "servingGrams"';
+const FOOD_COLUMNS = 'id, name, brand, barcode, kcal, protein, carbs, fat, serving_grams AS "servingGrams", favorite';
+const meal = { enum: ['breakfast', 'lunch', 'dinner', 'snack'] };
 const ENTRY_COLUMNS = 'id, date, meal, name, grams, kcal, protein, carbs, fat';
 
 export default async function nutritionRoutes(app) {
@@ -89,7 +90,7 @@ export default async function nutritionRoutes(app) {
             food: foodSchema,
             grams: { type: 'number', exclusiveMinimum: 0, maximum: 10000 },
             date,
-            meal: { enum: ['breakfast', 'lunch', 'dinner', 'snack'] },
+            meal,
             // false for one-off items (AI estimates, recipes) that shouldn't appear in "recent foods".
             saveFood: { type: 'boolean', default: true },
           },
@@ -127,18 +128,112 @@ export default async function nutritionRoutes(app) {
     },
   );
 
+  // Changes amount, meal, day or name of a logged food. Macros are rescaled to the new amount.
+  app.put(
+    '/entries/:id',
+    {
+      schema: {
+        body: {
+          type: 'object',
+          required: ['grams', 'meal', 'date'],
+          properties: {
+            grams: { type: 'number', exclusiveMinimum: 0, maximum: 10000 },
+            meal,
+            date,
+            name: { type: 'string', minLength: 1, maxLength: 200 },
+          },
+        },
+      },
+    },
+    async (req, reply) => {
+      const { grams, meal: m, date: d, name } = req.body;
+      const { rows } = await query(
+        `UPDATE entries SET
+           kcal = kcal * $3 / grams, protein = protein * $3 / grams, carbs = carbs * $3 / grams, fat = fat * $3 / grams,
+           grams = $3, meal = $4, date = $5, name = COALESCE($6, name)
+         WHERE id = $1 AND user_id = $2 AND grams > 0
+         RETURNING ${ENTRY_COLUMNS}`,
+        [req.params.id, req.userId, grams, m, d, name ?? null],
+      );
+      if (!rows[0]) return reply.code(404).send({ error: 'Eintrag nicht gefunden' });
+      return rows[0];
+    },
+  );
+
+  // Copies all entries of a day (or of one meal) to another day/meal, e.g. "same breakfast as yesterday".
+  app.post(
+    '/entries/copy',
+    {
+      schema: {
+        body: {
+          type: 'object',
+          required: ['fromDate', 'toDate'],
+          properties: { fromDate: date, toDate: date, fromMeal: meal, toMeal: meal },
+        },
+      },
+    },
+    async (req) => {
+      const { fromDate, toDate, fromMeal, toMeal } = req.body;
+      const { rows } = await query(
+        `INSERT INTO entries (user_id, date, meal, food_id, name, grams, kcal, protein, carbs, fat)
+         SELECT user_id, $3, COALESCE($5, meal), food_id, name, grams, kcal, protein, carbs, fat
+         FROM entries WHERE user_id = $1 AND date = $2 AND ($4::text IS NULL OR meal = $4)
+         ORDER BY created_at
+         RETURNING ${ENTRY_COLUMNS}`,
+        [req.userId, fromDate, toDate, fromMeal ?? null, toMeal ?? null],
+      );
+      return rows;
+    },
+  );
+
   app.delete('/entries/:id', async (req) => {
     await query('DELETE FROM entries WHERE id = $1 AND user_id = $2', [req.params.id, req.userId]);
     return { ok: true };
   });
 
+  // The user's own foods: favourites first, then most recently used.
   app.get('/foods/recent', async (req) => {
     const q = typeof req.query.q === 'string' ? req.query.q : '';
+    const limit = req.query.all === '1' ? 1000 : 30;
     const { rows } = await query(
-      `SELECT ${FOOD_COLUMNS} FROM foods WHERE user_id = $1 AND name ILIKE $2 ORDER BY last_used_at DESC LIMIT 30`,
-      [req.userId, `%${q}%`],
+      `SELECT ${FOOD_COLUMNS} FROM foods WHERE user_id = $1 AND name ILIKE $2 ORDER BY favorite DESC, last_used_at DESC LIMIT $3`,
+      [req.userId, `%${q}%`, limit],
     );
     return rows;
+  });
+
+  app.put('/foods/:id', { schema: { body: { ...foodSchema, properties: { ...foodSchema.properties, favorite: { type: 'boolean' } } } } }, async (req, reply) => {
+    const f = req.body;
+    const { rows } = await query(
+      `UPDATE foods SET name = $3, brand = $4, kcal = $5, protein = $6, carbs = $7, fat = $8, serving_grams = $9,
+         favorite = COALESCE($10, favorite)
+       WHERE id = $1 AND user_id = $2 RETURNING ${FOOD_COLUMNS}`,
+      [req.params.id, req.userId, f.name, f.brand ?? null, f.kcal, f.protein, f.carbs, f.fat, f.servingGrams ?? null, f.favorite ?? null],
+    );
+    if (!rows[0]) return reply.code(404).send({ error: 'Lebensmittel nicht gefunden' });
+    return rows[0];
+  });
+
+  // Creates an own food directly (from "Lebensmittel & Rezepte").
+  app.post('/foods', { schema: { body: { ...foodSchema, properties: { ...foodSchema.properties, favorite: { type: 'boolean' } } } } }, async (req) => {
+    const f = req.body;
+    const { rows } = await query(
+      `INSERT INTO foods (user_id, name, brand, kcal, protein, carbs, fat, serving_grams, favorite)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING ${FOOD_COLUMNS}`,
+      [req.userId, f.name, f.brand ?? null, f.kcal, f.protein, f.carbs, f.fat, f.servingGrams ?? null, f.favorite ?? false],
+    );
+    return rows[0];
+  });
+
+  app.put('/foods/:id/favorite', { schema: { body: { type: 'object', required: ['favorite'], properties: { favorite: { type: 'boolean' } } } } }, async (req) => {
+    await query('UPDATE foods SET favorite = $3 WHERE id = $1 AND user_id = $2', [req.params.id, req.userId, req.body.favorite]);
+    return { ok: true };
+  });
+
+  // Removes a food from the user's list; diary entries keep their values.
+  app.delete('/foods/:id', async (req) => {
+    await query('DELETE FROM foods WHERE id = $1 AND user_id = $2', [req.params.id, req.userId]);
+    return { ok: true };
   });
 
   // Generic foods from the Swiss Food Composition Database (migration 008), shown as "Empfohlen" above

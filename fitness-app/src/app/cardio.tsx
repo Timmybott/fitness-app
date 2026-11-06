@@ -1,24 +1,42 @@
 import * as Haptics from 'expo-haptics';
-import { router, Stack } from 'expo-router';
+import { DatePicker, Host } from '@expo/ui/swift-ui';
+import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { Alert, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 
 import { AppText } from '@/components/app-text';
 import { Chip } from '@/components/chip';
-import { List } from '@/components/list';
+import { List, Row } from '@/components/list';
 import { Colors, Spacing } from '@/constants/theme';
-import { api, invalidate } from '@/lib/api';
-import { cardioKcal, CARDIO_TYPES, useBody, type CardioType } from '@/lib/calories';
+import { api, invalidate, useApi } from '@/lib/api';
+import { cardioKcal, CARDIO_TYPES, useBody } from '@/lib/calories';
 import { toDateKey } from '@/lib/date';
-import { logWorkoutToHealth } from '@/lib/health';
+import { deleteWorkoutFromHealth, logWorkoutToHealth } from '@/lib/health';
 import { parseNum, type Cardio } from '@/lib/types';
 
+/** Log a cardio session, or edit one when opened with `id`. */
 export default function CardioScreen() {
+  const { id } = useLocalSearchParams<{ id?: string }>();
+  const list = useApi<Cardio[]>(id ? '/cardio' : null).data;
+  const existing = list ? list.find((c) => String(c.id) === id) : undefined;
+  if (id && !existing) return null;
+  return <CardioForm key={existing ? existing.id : 'new'} cardio={existing} />;
+}
+
+const keyToDate = (key: string) => {
+  const [y, m, d] = key.split('-').map(Number);
+  return new Date(y, m - 1, d, 12);
+};
+const toText = (n: number | null) => (n ? String(n).replace('.', ',') : '');
+
+function CardioForm({ cardio }: { cardio?: Cardio }) {
+  'use no memo';
   const body = useBody();
-  const [type, setType] = useState<CardioType>('Laufen');
-  const [minutes, setMinutes] = useState('');
-  const [km, setKm] = useState('');
-  const [kcal, setKcal] = useState('');
+  const [type, setType] = useState<string>(cardio ? cardio.type : 'Laufen');
+  const [minutes, setMinutes] = useState(cardio ? toText(cardio.minutes) : '');
+  const [km, setKm] = useState(cardio ? toText(cardio.distanceKm) : '');
+  const [kcal, setKcal] = useState(cardio ? toText(cardio.kcal ? Math.round(cardio.kcal) : null) : '');
+  const [day, setDay] = useState(() => (cardio ? keyToDate(cardio.date.slice(0, 10)) : new Date()));
   const [saving, setSaving] = useState(false);
 
   // Shown as placeholder and used when no calories are entered.
@@ -28,17 +46,22 @@ export default function CardioScreen() {
     if (saving) return;
     if (parseNum(minutes) <= 0) return Alert.alert('Dauer fehlt', 'Trag ein, wie viele Minuten du trainiert hast.');
     setSaving(true);
+    const payload = {
+      date: toDateKey(day),
+      type,
+      minutes: parseNum(minutes),
+      distanceKm: km ? parseNum(km) : null,
+      kcal: kcal ? parseNum(kcal) : estimate,
+    };
     try {
-      const c = await api.post<Cardio>('/cardio', {
-        date: toDateKey(new Date()),
-        type,
-        minutes: parseNum(minutes),
-        distanceKm: km ? parseNum(km) : null,
-        kcal: kcal ? parseNum(kcal) : estimate,
-      });
-      // Logged right after the session, so it ended now.
-      const end = new Date();
-      logWorkoutToHealth({ syncId: `cardio-${c.id}`, type, start: new Date(end.getTime() - c.minutes * 60000), end, distanceKm: c.distanceKm, kcal: c.kcal });
+      if (cardio) {
+        await api.put(`/cardio/${cardio.id}`, payload);
+      } else {
+        const c = await api.post<Cardio>('/cardio', payload);
+        // Logged today right after the session, so it ended now; on another day it ends at noon.
+        const end = toDateKey(day) === toDateKey(new Date()) ? new Date() : keyToDate(payload.date);
+        logWorkoutToHealth({ syncId: `cardio-${c.id}`, type, start: new Date(end.getTime() - c.minutes * 60000), end, distanceKm: c.distanceKm, kcal: c.kcal });
+      }
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       invalidate();
       router.back();
@@ -48,8 +71,24 @@ export default function CardioScreen() {
     }
   };
 
+  const remove = () =>
+    Alert.alert(cardio!.type, 'Eintrag löschen?', [
+      { text: 'Abbrechen', style: 'cancel' },
+      {
+        text: 'Löschen',
+        style: 'destructive',
+        onPress: async () => {
+          await api.del(`/cardio/${cardio!.id}`);
+          deleteWorkoutFromHealth(`cardio-${cardio!.id}`);
+          invalidate();
+          router.back();
+        },
+      },
+    ]);
+
   return (
     <ScrollView style={styles.flex} contentContainerStyle={styles.content} contentInsetAdjustmentBehavior="automatic" keyboardShouldPersistTaps="handled">
+      <Stack.Screen options={{ title: cardio ? 'Cardio bearbeiten' : 'Cardio' }} />
       <Stack.Toolbar placement="left">
         <Stack.Toolbar.Button onPress={() => router.back()}>Abbrechen</Stack.Toolbar.Button>
       </Stack.Toolbar>
@@ -66,13 +105,26 @@ export default function CardioScreen() {
       </View>
 
       <List>
-        <Field label="Dauer" unit="min" value={minutes} onChange={setMinutes} autoFocus />
+        <Row
+          title="Tag"
+          right={
+            <Host matchContents>
+              <DatePicker selection={day} displayedComponents={['date']} onDateChange={setDay} />
+            </Host>
+          }
+        />
+        <Field label="Dauer" unit="min" value={minutes} onChange={setMinutes} autoFocus={!cardio} />
         <Field label="Distanz" unit="km" value={km} onChange={setKm} />
         <Field label="Kalorien" unit="kcal" value={kcal} onChange={setKcal} placeholder={estimate ? String(estimate) : '0'} />
       </List>
       <AppText type="caption" color={Colors.textSecondary} style={styles.hint}>
         Ohne Angabe schätzt die App die aktiven Kalorien aus Dauer, Distanz und deinem Gewicht ({Math.round(body.kg)} kg).
       </AppText>
+      {cardio && (
+        <List>
+          <Row title="Eintrag löschen" destructive onPress={remove} />
+        </List>
+      )}
     </ScrollView>
   );
 }

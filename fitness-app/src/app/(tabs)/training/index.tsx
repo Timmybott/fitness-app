@@ -88,6 +88,8 @@ export default function TrainingScreen() {
                 title={c.type}
                 subtitle={formatDateKey(c.date)}
                 value={[`${formatNumber(c.minutes, 0)} min`, c.distanceKm ? `${formatNumber(c.distanceKm)} km` : null].filter(Boolean).join(' · ')}
+                chevron
+                onPress={() => router.push({ pathname: '/cardio', params: { id: c.id } })}
                 onLongPress={() =>
                   Alert.alert(c.type, 'Eintrag löschen?', [
                     { text: 'Abbrechen', style: 'cancel' },

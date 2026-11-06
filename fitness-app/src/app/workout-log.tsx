@@ -1,6 +1,6 @@
 import { DatePicker, Host } from '@expo/ui/swift-ui';
 import * as Haptics from 'expo-haptics';
-import { router, Stack } from 'expo-router';
+import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { SymbolView } from 'expo-symbols';
 import { useState } from 'react';
 import { Alert, Pressable, StyleSheet, TextInput, View } from 'react-native';
@@ -16,7 +16,7 @@ import { bridge } from '@/lib/bridge';
 import { strengthKcal, useBody } from '@/lib/calories';
 import { formatKg } from '@/lib/format';
 import { logWorkoutToHealth } from '@/lib/health';
-import { parseNum, type LastSets, type Template } from '@/lib/types';
+import { parseNum, type LastSets, type Template, type WorkoutDetail } from '@/lib/types';
 
 type LogExercise = { exerciseId: number; name: string; sets: SetRow[] };
 
@@ -35,22 +35,44 @@ function loggedSets(exercises: LogExercise[]) {
   );
 }
 
-/** Enter a workout that is already done: start time, duration, exercises and sets. */
+/** Saved workout → form values (sets grouped by exercise position). */
+function fromWorkout(w: WorkoutDetail): LogExercise[] {
+  const positions = [...new Set(w.sets.map((s) => s.position))];
+  return positions.map((pos) => {
+    const sets = w.sets.filter((s) => s.position === pos);
+    return { exerciseId: sets[0].exerciseId, name: sets[0].name, sets: sets.map((s) => ({ weight: toText(s.weight), reps: toText(s.reps) })) };
+  });
+}
+
+/**
+ * Enter a workout that is already done (start time, duration, exercises and sets),
+ * or edit a saved one when opened with `id`.
+ */
 export default function WorkoutLogScreen() {
+  const { id } = useLocalSearchParams<{ id?: string }>();
+  const workout = useApi<WorkoutDetail>(id ? `/workouts/${id}` : null).data;
+  if (id && !workout) return null;
+  return <WorkoutForm key={workout ? workout.id : 'new'} workout={workout} />;
+}
+
+function WorkoutForm({ workout }: { workout?: WorkoutDetail }) {
   // Opted out of the React Compiler like the other forms (it miscompiled initial state before).
   'use no memo';
   const body = useBody();
   const templates = useApi<Template[]>('/templates').data;
-  const [name, setName] = useState('Training');
+  const [name, setName] = useState(workout ? workout.name : 'Training');
   const [start, setStart] = useState(() => {
+    if (workout) return new Date(workout.startedAt);
     // Default: an hour-long session that ended at the last full quarter hour.
     const d = new Date(Date.now() - 60 * 60000);
     d.setMinutes(Math.floor(d.getMinutes() / 15) * 15, 0, 0);
     return d;
   });
   const [openedAt] = useState(() => new Date());
-  const [minutes, setMinutes] = useState('60');
-  const [exercises, setExercises] = useState<LogExercise[]>([]);
+  const [minutes, setMinutes] = useState(
+    workout ? String(Math.max(1, Math.round((Date.parse(workout.finishedAt) - Date.parse(workout.startedAt)) / 60000))) : '60',
+  );
+  const [exercises, setExercises] = useState<LogExercise[]>(workout ? fromWorkout(workout) : []);
   const [saving, setSaving] = useState(false);
 
   const durationMs = parseNum(minutes) * 60000;
@@ -104,16 +126,22 @@ export default function WorkoutLogScreen() {
     if (inFuture(finishedAt)) return Alert.alert('Liegt in der Zukunft', 'Das Training muss schon vorbei sein. Passe Beginn oder Dauer an.');
     setSaving(true);
     try {
-      const { id } = await api.post<{ id: number }>('/workouts', {
+      const payload = {
         name: name.trim(),
-        templateId: null,
         startedAt: start.toISOString(),
         finishedAt: finishedAt.toISOString(),
         kcal,
         sets: sets.map(({ name: _name, ...s }) => s),
-      });
-      logWorkoutToHealth({ syncId: `workout-${id}`, type: 'Krafttraining', start, end: finishedAt, kcal });
+      };
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      if (workout) {
+        await api.put(`/workouts/${workout.id}`, payload);
+        invalidate();
+        router.back();
+        return;
+      }
+      const { id } = await api.post<{ id: number }>('/workouts', { ...payload, templateId: null });
+      logWorkoutToHealth({ syncId: `workout-${id}`, type: 'Krafttraining', start, end: finishedAt, kcal });
       invalidate();
       router.replace({ pathname: '/workout-detail', params: { id } });
     } catch (e) {
@@ -124,7 +152,7 @@ export default function WorkoutLogScreen() {
 
   return (
     <Screen>
-      <Stack.Screen options={{ title: 'Nachträglich eintragen' }} />
+      <Stack.Screen options={{ title: workout ? 'Workout bearbeiten' : 'Nachträglich eintragen' }} />
       <Stack.Toolbar placement="left">
         <Stack.Toolbar.Button onPress={() => router.back()}>Abbrechen</Stack.Toolbar.Button>
       </Stack.Toolbar>
@@ -142,7 +170,7 @@ export default function WorkoutLogScreen() {
           icon="calendar"
           right={
             <Host matchContents>
-              <DatePicker selection={start} displayedComponents={['date', 'hourAndMinute']} range={{ end: openedAt }} onDateChange={setStart} />
+              <DatePicker selection={start} displayedComponents={['date', 'hourAndMinute']} range={{ end: workout && new Date(workout.startedAt) > openedAt ? new Date(workout.startedAt) : openedAt }} onDateChange={setStart} />
             </Host>
           }
         />

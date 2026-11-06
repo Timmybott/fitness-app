@@ -8,8 +8,8 @@ import { type BodyProfile, type BodyWeight } from '@/lib/types';
  *
  * Gross energy uses MET values from the Compendium of Physical Activities (1 MET ≈ 1 kcal per kg and
  * hour); the resting share is then subtracted. Resting energy comes from Mifflin-St Jeor when the
- * body height is known (age 30 and a male/female average until age and sex are in the profile),
- * else from the 1 kcal/kg/h convention.
+ * body height is known (with age and sex from the profile; age 30 and a male/female average if
+ * missing), else from the 1 kcal/kg/h convention.
  *
  * Cardio: MET by type and speed; running from distance (~1 kcal per kg and km) when one is given.
  *
@@ -23,7 +23,7 @@ import { type BodyProfile, type BodyWeight } from '@/lib/types';
  * A one-hour, 15-set session for an 80 kg person comes out around 150–200 active kcal.
  */
 
-export type Body = { kg: number; heightCm?: number | null };
+export type Body = { kg: number; heightCm?: number | null; age?: number | null; sex?: 'm' | 'f' | null };
 
 const DEFAULT_BODY_KG = 75;
 
@@ -32,14 +32,21 @@ export function useBody(): Body {
   const weights = useApi<BodyWeight[]>('/weights?days=365').data;
   const profile = useApi<BodyProfile>('/body').data;
   const last = weights ? weights.at(-1) : undefined;
-  return { kg: last ? last.kg : DEFAULT_BODY_KG, heightCm: profile ? profile.heightCm : null };
+  return {
+    kg: last ? last.kg : DEFAULT_BODY_KG,
+    heightCm: profile ? profile.heightCm : null,
+    age: profile && profile.birthYear ? new Date().getFullYear() - profile.birthYear : null,
+    sex: profile ? profile.sex : null,
+  };
 }
 
 /** Resting energy in kcal per hour. */
 export function restingKcalPerHour(body: Body) {
   if (body.heightCm && body.heightCm > 100) {
-    // Mifflin-St Jeor: 10·kg + 6.25·cm − 5·age + s (s = +5 male, −161 female; average −78), age 30.
-    return Math.max(30, (10 * body.kg + 6.25 * body.heightCm - 5 * 30 - 78) / 24);
+    // Mifflin-St Jeor: 10·kg + 6.25·cm − 5·age + s (s = +5 male, −161 female; average −78).
+    const age = body.age && body.age > 10 && body.age < 110 ? body.age : 30;
+    const s = body.sex === 'm' ? 5 : body.sex === 'f' ? -161 : -78;
+    return Math.max(30, (10 * body.kg + 6.25 * body.heightCm - 5 * age + s) / 24);
   }
   return body.kg;
 }

@@ -59,6 +59,14 @@ function RootStack() {
           name="meal"
           options={{ presentation: 'formSheet', headerShown: true, sheetAllowedDetents: [0.6, 1], sheetGrabberVisible: true }}
         />
+        <Stack.Screen
+          name="entry"
+          options={{ presentation: 'formSheet', headerShown: true, sheetAllowedDetents: [0.75, 1], sheetGrabberVisible: true }}
+        />
+        <Stack.Screen name="my-foods" options={{ presentation: 'modal', headerShown: true }} />
+        <Stack.Screen name="food-edit" options={{ presentation: 'modal', headerShown: true }} />
+        <Stack.Screen name="reminders" options={{ presentation: 'modal', headerShown: true }} />
+        <Stack.Screen name="password" options={{ presentation: 'modal', headerShown: true }} />
         <Stack.Screen name="workout" options={{ presentation: 'fullScreenModal', headerShown: true, gestureEnabled: false }} />
         <Stack.Screen name="template" options={{ presentation: 'modal', headerShown: true }} />
         <Stack.Screen

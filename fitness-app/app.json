@@ -71,6 +71,12 @@
           "NSHealthUpdateUsageDescription": "Die App speichert deine Mahlzeiten, dein Gewicht und deine Workouts in Apple Health.",
           "background": false
         }
+      ],
+      [
+        "expo-notifications",
+        {
+          "enableRemoteNotifications": false
+        }
       ]
     ],
     "experiments": {

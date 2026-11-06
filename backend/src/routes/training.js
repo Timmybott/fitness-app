@@ -58,6 +58,54 @@ async function writeTemplateExercises(db, templateId, exercises) {
   }
 }
 
+async function insertSets(db, workoutId, sets) {
+  for (const s of sets) {
+    await db.query(
+      'INSERT INTO workout_sets (workout_id, exercise_id, position, set_index, weight, reps) VALUES ($1, $2, $3, $4, $5, $6)',
+      [workoutId, s.exerciseId, s.position, s.setIndex, s.weight, s.reps],
+    );
+  }
+}
+
+const workoutBody = {
+  type: 'object',
+  required: ['name', 'startedAt', 'finishedAt', 'sets'],
+  properties: {
+    name: { type: 'string', minLength: 1, maxLength: 80 },
+    templateId: { type: ['integer', 'null'] },
+    startedAt: { type: 'string', format: 'date-time' },
+    finishedAt: { type: 'string', format: 'date-time' },
+    kcal: { type: ['number', 'null'], minimum: 0, maximum: 10000 },
+    sets: {
+      type: 'array',
+      maxItems: 300,
+      items: {
+        type: 'object',
+        required: ['exerciseId', 'position', 'setIndex', 'weight', 'reps'],
+        properties: {
+          exerciseId: { type: 'integer' },
+          position: { type: 'integer', minimum: 0 },
+          setIndex: { type: 'integer', minimum: 0 },
+          weight: { type: 'number', minimum: 0, maximum: 1000 },
+          reps: { type: 'integer', minimum: 0, maximum: 1000 },
+        },
+      },
+    },
+  },
+};
+
+const cardioBody = {
+  type: 'object',
+  required: ['date', 'type', 'minutes'],
+  properties: {
+    date,
+    type: { type: 'string', minLength: 1, maxLength: 40 },
+    minutes: { type: 'number', exclusiveMinimum: 0, maximum: 1440 },
+    distanceKm: { type: ['number', 'null'], minimum: 0, maximum: 1000 },
+    kcal: { type: ['number', 'null'], minimum: 0, maximum: 20000 },
+  },
+};
+
 export default async function trainingRoutes(app) {
   app.addHook('preHandler', requireAuth);
 
@@ -125,32 +173,7 @@ export default async function trainingRoutes(app) {
     '/workouts',
     {
       schema: {
-        body: {
-          type: 'object',
-          required: ['name', 'startedAt', 'finishedAt', 'sets'],
-          properties: {
-            name: { type: 'string', minLength: 1, maxLength: 80 },
-            templateId: { type: ['integer', 'null'] },
-            startedAt: { type: 'string', format: 'date-time' },
-            finishedAt: { type: 'string', format: 'date-time' },
-            kcal: { type: ['number', 'null'], minimum: 0, maximum: 10000 },
-            sets: {
-              type: 'array',
-              maxItems: 300,
-              items: {
-                type: 'object',
-                required: ['exerciseId', 'position', 'setIndex', 'weight', 'reps'],
-                properties: {
-                  exerciseId: { type: 'integer' },
-                  position: { type: 'integer', minimum: 0 },
-                  setIndex: { type: 'integer', minimum: 0 },
-                  weight: { type: 'number', minimum: 0, maximum: 1000 },
-                  reps: { type: 'integer', minimum: 0, maximum: 1000 },
-                },
-              },
-            },
-          },
-        },
+        body: workoutBody,
       },
     },
     async (req) =>
@@ -166,12 +189,7 @@ export default async function trainingRoutes(app) {
           'INSERT INTO workouts (user_id, template_id, name, started_at, finished_at, kcal) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id',
           [req.userId, templateId, b.name, b.startedAt, b.finishedAt, b.kcal ?? null],
         );
-        for (const s of b.sets) {
-          await db.query(
-            'INSERT INTO workout_sets (workout_id, exercise_id, position, set_index, weight, reps) VALUES ($1, $2, $3, $4, $5, $6)',
-            [rows[0].id, s.exerciseId, s.position, s.setIndex, s.weight, s.reps],
-          );
-        }
+        await insertSets(db, rows[0].id, b.sets);
         return { id: rows[0].id };
       }),
   );
@@ -202,6 +220,22 @@ export default async function trainingRoutes(app) {
     );
     return { ...w.rows[0], sets: sets.rows };
   });
+
+  // Editing a saved workout replaces its name, times, calories and all sets.
+  app.put('/workouts/:id', { schema: { body: workoutBody } }, async (req, reply) =>
+    transaction(async (db) => {
+      const b = req.body;
+      await assertExercises(db, b.sets.map((s) => s.exerciseId), req.userId);
+      const { rows } = await db.query(
+        'UPDATE workouts SET name = $3, started_at = $4, finished_at = $5, kcal = $6 WHERE id = $1 AND user_id = $2 RETURNING id',
+        [req.params.id, req.userId, b.name, b.startedAt, b.finishedAt, b.kcal ?? null],
+      );
+      if (!rows[0]) return reply.code(404).send({ error: 'Workout nicht gefunden' });
+      await db.query('DELETE FROM workout_sets WHERE workout_id = $1', [rows[0].id]);
+      await insertSets(db, rows[0].id, b.sets);
+      return { id: rows[0].id };
+    }),
+  );
 
   app.delete('/workouts/:id', async (req) => {
     await query('DELETE FROM workouts WHERE id = $1 AND user_id = $2', [req.params.id, req.userId]);
@@ -252,21 +286,7 @@ export default async function trainingRoutes(app) {
 
   app.post(
     '/cardio',
-    {
-      schema: {
-        body: {
-          type: 'object',
-          required: ['date', 'type', 'minutes'],
-          properties: {
-            date,
-            type: { type: 'string', minLength: 1, maxLength: 40 },
-            minutes: { type: 'number', exclusiveMinimum: 0, maximum: 1440 },
-            distanceKm: { type: ['number', 'null'], minimum: 0, maximum: 1000 },
-            kcal: { type: ['number', 'null'], minimum: 0, maximum: 20000 },
-          },
-        },
-      },
-    },
+    { schema: { body: cardioBody } },
     async (req) => {
       const b = req.body;
       const { rows } = await query(
@@ -277,6 +297,17 @@ export default async function trainingRoutes(app) {
       return rows[0];
     },
   );
+
+  app.put('/cardio/:id', { schema: { body: cardioBody } }, async (req, reply) => {
+    const b = req.body;
+    const { rows } = await query(
+      `UPDATE cardio_sessions SET date = $3, type = $4, minutes = $5, distance_km = $6, kcal = $7 WHERE id = $1 AND user_id = $2
+       RETURNING id, date, type, minutes, distance_km AS "distanceKm", kcal`,
+      [req.params.id, req.userId, b.date, b.type, b.minutes, b.distanceKm ?? null, b.kcal ?? null],
+    );
+    if (!rows[0]) return reply.code(404).send({ error: 'Eintrag nicht gefunden' });
+    return rows[0];
+  });
 
   app.delete('/cardio/:id', async (req) => {
     await query('DELETE FROM cardio_sessions WHERE id = $1 AND user_id = $2', [req.params.id, req.userId]);

@@ -16,6 +16,7 @@ import { api, invalidate, useApi } from '@/lib/api';
 import { formatDateKey, shiftDateKey, toDateKey } from '@/lib/date';
 import { formatNumber } from '@/lib/format';
 import { deleteEntryFromHealth, useTodayActivity } from '@/lib/health';
+import { copyDay } from '@/lib/copy-entries';
 import { startPhotoEntry } from '@/lib/photo';
 import { MEALS, sumMacros, type Entry, type Goals, type HealthToday, type Macros, type Meal } from '@/lib/types';
 
@@ -45,6 +46,9 @@ export default function NutritionScreen() {
           <Stack.Toolbar.MenuAction icon="camera.fill" onPress={() => startPhotoEntry(date, guessMeal())}>
             Foto
           </Stack.Toolbar.MenuAction>
+          <Stack.Toolbar.MenuAction icon="book.closed.fill" onPress={() => router.push('/recipe')}>
+            Neues Rezept
+          </Stack.Toolbar.MenuAction>
           <Stack.Toolbar.MenuAction icon="text.book.closed.fill" onPress={() => router.push('/recipe-scan')}>
             Rezept per Foto
           </Stack.Toolbar.MenuAction>
@@ -52,6 +56,12 @@ export default function NutritionScreen() {
             icon="square.and.pencil"
             onPress={() => router.push({ pathname: '/add-food', params: { date, meal: guessMeal(), manual: '1' } })}>
             Manuell eingeben
+          </Stack.Toolbar.MenuAction>
+          <Stack.Toolbar.MenuAction icon="doc.on.doc" onPress={() => copyDay(shiftDateKey(date, -1), date)}>
+            Vortag übernehmen
+          </Stack.Toolbar.MenuAction>
+          <Stack.Toolbar.MenuAction icon="star.fill" onPress={() => router.push('/my-foods')}>
+            Lebensmittel & Rezepte
           </Stack.Toolbar.MenuAction>
         </Stack.Toolbar.Menu>
       </Stack.Toolbar>
@@ -181,7 +191,10 @@ function MealSection({ meal, date, entries }: { meal: (typeof MEALS)[number]; da
       </View>
 
       {entries.map((e) => (
-        <Pressable key={e.id} onLongPress={() => confirmDelete(e)} style={({ pressed }) => [styles.entry, pressed && styles.pressed]}>
+        <Pressable
+          key={e.id}
+          onPress={() => router.push({ pathname: '/entry', params: { id: e.id, date } })}
+          onLongPress={() => confirmDelete(e)} style={({ pressed }) => [styles.entry, pressed && styles.pressed]}>
           <View style={styles.flex}>
             <AppText numberOfLines={1}>{e.name}</AppText>
             <AppText type="caption" color={Colors.textSecondary}>

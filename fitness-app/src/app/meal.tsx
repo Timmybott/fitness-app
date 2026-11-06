@@ -8,7 +8,8 @@ import { EmptyState, List, Row } from '@/components/list';
 import { Screen, Section } from '@/components/screen';
 import { Colors, Spacing } from '@/constants/theme';
 import { api, invalidate, useApi } from '@/lib/api';
-import { formatDateKey } from '@/lib/date';
+import { copyDay } from '@/lib/copy-entries';
+import { formatDateKey, shiftDateKey, toDateKey } from '@/lib/date';
 import { deleteEntryFromHealth } from '@/lib/health';
 import { MEALS, sumMacros, type Entry, type Goals, type Meal } from '@/lib/types';
 
@@ -45,6 +46,17 @@ export default function MealScreen() {
     <Screen>
       <Stack.Screen options={{ title: `${info.label} · ${formatDateKey(date)}` }} />
       <Stack.Toolbar placement="right">
+        <Stack.Toolbar.Menu icon="ellipsis">
+          <Stack.Toolbar.MenuAction icon="arrow.uturn.backward" onPress={() => copyDay(shiftDateKey(date, -1), date, meal, meal)}>
+            {`${info.label} vom Vortag übernehmen`}
+          </Stack.Toolbar.MenuAction>
+          <Stack.Toolbar.MenuAction icon="doc.on.doc" onPress={() => copyDay(date, toDateKey(new Date()), meal, meal)}>
+            {`Nach heute kopieren`}
+          </Stack.Toolbar.MenuAction>
+          <Stack.Toolbar.MenuAction icon="arrow.right" onPress={() => copyDay(date, shiftDateKey(date, 1), meal, meal)}>
+            {`Auf den nächsten Tag kopieren`}
+          </Stack.Toolbar.MenuAction>
+        </Stack.Toolbar.Menu>
         <Stack.Toolbar.Button icon="plus" onPress={() => router.push({ pathname: '/add-food', params: { date, meal } })} />
       </Stack.Toolbar>
 
@@ -62,7 +74,7 @@ export default function MealScreen() {
         </View>
       </Card>
 
-      <Section title="Gegessen" footer={entries.length ? 'Lange drücken zum Löschen.' : undefined}>
+      <Section title="Gegessen" footer={entries.length ? 'Tippen zum Bearbeiten, lange drücken zum Löschen.' : undefined}>
         {entries.length ? (
           <List>
             {entries.map((e) => (
@@ -71,6 +83,8 @@ export default function MealScreen() {
                 title={e.name}
                 subtitle={`${Math.round(e.grams)} g · P ${Math.round(e.protein)} · K ${Math.round(e.carbs)} · F ${Math.round(e.fat)}`}
                 value={`${Math.round(e.kcal)} kcal`}
+                chevron
+                onPress={() => router.push({ pathname: '/entry', params: { id: e.id, date } })}
                 onLongPress={() => remove(e)}
               />
             ))}

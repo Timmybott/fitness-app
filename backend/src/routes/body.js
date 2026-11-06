@@ -35,16 +35,40 @@ export default async function bodyRoutes(app) {
 
   // Body data used for calorie estimates (weight itself comes from /weights).
   app.get('/body', async (req) => {
-    const { rows } = await query('SELECT height_cm::float AS "heightCm" FROM users WHERE id = $1', [req.userId]);
-    return { heightCm: rows[0]?.heightCm ?? null };
+    const { rows } = await query(
+      'SELECT height_cm::float AS "heightCm", birth_year AS "birthYear", sex FROM users WHERE id = $1',
+      [req.userId],
+    );
+    const r = rows[0] ?? {};
+    return { heightCm: r.heightCm ?? null, birthYear: r.birthYear ?? null, sex: r.sex ?? null };
   });
 
+  // Partial update: only the fields sent are changed (null clears one).
   app.put(
     '/body',
-    { schema: { body: { type: 'object', required: ['heightCm'], properties: { heightCm: { type: ['number', 'null'], minimum: 100, maximum: 250 } } } } },
+    {
+      schema: {
+        body: {
+          type: 'object',
+          properties: {
+            heightCm: { type: ['number', 'null'], minimum: 100, maximum: 250 },
+            birthYear: { type: ['integer', 'null'], minimum: 1900, maximum: 2100 },
+            sex: { type: ['string', 'null'], enum: ['m', 'f', null] },
+          },
+        },
+      },
+    },
     async (req) => {
-      await query('UPDATE users SET height_cm = $2 WHERE id = $1', [req.userId, req.body.heightCm]);
-      return { heightCm: req.body.heightCm };
+      const b = req.body;
+      const columns = { heightCm: 'height_cm', birthYear: 'birth_year', sex: 'sex' };
+      const keys = Object.keys(columns).filter((k) => k in b);
+      if (keys.length > 0) {
+        await query(
+          `UPDATE users SET ${keys.map((k, i) => `${columns[k]} = $${i + 2}`).join(', ')} WHERE id = $1`,
+          [req.userId, ...keys.map((k) => b[k])],
+        );
+      }
+      return { ok: true };
     },
   );
 }

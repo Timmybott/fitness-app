@@ -6,6 +6,7 @@ import { List, Row } from '@/components/list';
 import { Section } from '@/components/screen';
 import { Colors, Radius, Spacing } from '@/constants/theme';
 import { useApi } from '@/lib/api';
+import { foodActions } from '@/lib/food-actions';
 import { searchProducts } from '@/lib/openfoodfacts';
 import { type Food } from '@/lib/types';
 
@@ -23,6 +24,8 @@ export function FoodSearch({ onSelect, children, autoFocus = true }: Props) {
   const [loading, setLoading] = useState(false);
   const q = query.trim();
   const recent = useApi<Food[]>(`/foods/recent?q=${encodeURIComponent(q)}`).data ?? [];
+  const favorites = recent.filter((f) => f.favorite);
+  const others = recent.filter((f) => !f.favorite);
   // Checked generic foods (Swiss database); those already in the user's list are shown there only.
   const reference = (useApi<Food[]>(q.length >= 2 ? `/foods/reference?q=${encodeURIComponent(q)}` : null).data ?? []).filter(
     (f) => !recent.some((r) => r.barcode === f.barcode),
@@ -64,7 +67,16 @@ export function FoodSearch({ onSelect, children, autoFocus = true }: Props) {
 
       {children?.(q)}
 
-      {recent.length > 0 && <FoodList title={q ? 'Meine Lebensmittel' : 'Zuletzt verwendet'} foods={recent} onSelect={onSelect} />}
+      {q ? (
+        recent.length > 0 && <FoodList title="Meine Lebensmittel" foods={recent} onSelect={onSelect} onLongPress={foodActions} />
+      ) : (
+        <>
+          {favorites.length > 0 && <FoodList title="Favoriten" foods={favorites} onSelect={onSelect} onLongPress={foodActions} />}
+          {others.length > 0 && (
+            <FoodList title="Zuletzt verwendet" footer="Lange drücken für Favorit, Bearbeiten oder Löschen." foods={others} onSelect={onSelect} onLongPress={foodActions} />
+          )}
+        </>
+      )}
       {q.length >= 2 && reference.length > 0 && (
         <FoodList title="Empfohlen" footer="Geprüfte Werte · Quelle: Schweizer Nährwertdatenbank (BLV)" foods={reference} onSelect={onSelect} />
       )}
@@ -73,17 +85,30 @@ export function FoodSearch({ onSelect, children, autoFocus = true }: Props) {
   );
 }
 
-function FoodList({ title, footer, foods, onSelect }: { title: string; footer?: string; foods: Food[]; onSelect: (f: Food) => void }) {
+function FoodList({
+  title,
+  footer,
+  foods,
+  onSelect,
+  onLongPress,
+}: {
+  title: string;
+  footer?: string;
+  foods: Food[];
+  onSelect: (f: Food) => void;
+  onLongPress?: (f: Food) => void;
+}) {
   return (
     <Section title={title} footer={footer}>
       <List>
         {foods.map((f, i) => (
           <Row
             key={`${f.id ?? f.barcode ?? f.name}-${i}`}
-            title={f.name}
+            title={f.favorite ? `★ ${f.name}` : f.name}
             subtitle={[f.brand, `P ${Math.round(f.protein)} · K ${Math.round(f.carbs)} · F ${Math.round(f.fat)} pro 100 ${f.unit ?? 'g'}`].filter(Boolean).join(' · ')}
             value={`${Math.round(f.kcal)} kcal`}
             onPress={() => onSelect(f)}
+            onLongPress={onLongPress && (() => onLongPress(f))}
           />
         ))}
       </List>

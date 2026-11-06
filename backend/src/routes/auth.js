@@ -1,4 +1,4 @@
-import { createSession, deleteSession, hashPassword, requireAuth, verifyPassword } from '../auth.js';
+import { createSession, deleteSession, hashPassword, requireAuth, signOutOtherDevices, verifyPassword } from '../auth.js';
 import { query } from '../db.js';
 
 const credentials = {
@@ -65,6 +65,32 @@ export default async function authRoutes(app) {
     const { rows } = await query('SELECT id, email, name FROM users WHERE id = $1', [req.userId]);
     return publicUser(rows[0]);
   });
+
+  // Changes the password. Other signed-in devices are signed out; this one and the Health shortcut stay connected.
+  app.post(
+    '/auth/password',
+    {
+      preHandler: requireAuth,
+      schema: {
+        body: {
+          type: 'object',
+          required: ['current', 'next'],
+          properties: { current: { type: 'string', maxLength: 200 }, next: { type: 'string', minLength: 8, maxLength: 200 } },
+        },
+      },
+    },
+    async (req, reply) => {
+      const { rows } = await query('SELECT email, password_hash FROM users WHERE id = $1', [req.userId]);
+      if (tooManyAttempts(`pw:${rows[0].email}`)) return reply.code(429).send({ error: 'Zu viele Versuche, bitte später erneut probieren' });
+      if (!(await verifyPassword(req.body.current, rows[0].password_hash))) {
+        return reply.code(401).send({ error: 'Das aktuelle Passwort stimmt nicht' });
+      }
+      await query('UPDATE users SET password_hash = $2 WHERE id = $1', [req.userId, await hashPassword(req.body.next)]);
+      await signOutOtherDevices(req.userId, req.token);
+      attempts.delete(`pw:${rows[0].email}`);
+      return { ok: true };
+    },
+  );
 
   app.delete('/me', { preHandler: requireAuth }, async (req) => {
     await query('DELETE FROM users WHERE id = $1', [req.userId]);

@@ -12,7 +12,7 @@ import { api, API_URL, invalidate, useApi } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { useBody } from '@/lib/calories';
 import { formatNumber } from '@/lib/format';
-import { parseNum, type Goals, type HealthToday } from '@/lib/types';
+import { parseNum, type BodyProfile, type Goals, type HealthToday } from '@/lib/types';
 
 type NumberGoal = Exclude<keyof Goals, 'addBurned'>;
 
@@ -61,8 +61,16 @@ export default function ProfileScreen() {
 
       <HealthSection />
 
+      <Section title="App">
+        <List>
+          <Row title="Erinnerungen" icon="bell.badge.fill" iconColor="#FF3B30" chevron onPress={() => router.push('/reminders')} />
+          <Row title="Lebensmittel & Rezepte" icon="star.fill" iconColor="#FFCC00" chevron onPress={() => router.push('/my-foods')} />
+        </List>
+      </Section>
+
       <Section title="Account" footer={`Server: ${API_URL}`}>
         <List>
+          <Row title="Passwort ändern" icon="key.fill" chevron onPress={() => router.push('/password')} />
           <Row title="Abmelden" onPress={signOut} />
           <Row title="Account löschen" destructive onPress={deleteAccount} />
         </List>
@@ -73,34 +81,73 @@ export default function ProfileScreen() {
 
 function BodySection() {
   const body = useBody();
+  const profile = useApi<BodyProfile>('/body').data;
   const hasWeight = (useApi<unknown[]>('/weights?days=365').data ?? []).length > 0;
+
+  const saveBody = async (patch: Partial<BodyProfile>) => {
+    try {
+      await api.put('/body', patch);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      invalidate();
+    } catch (e) {
+      Alert.alert('Speichern fehlgeschlagen', (e as Error).message);
+    }
+  };
 
   const editHeight = () =>
     Alert.prompt(
       'Körpergröße',
       'In Zentimetern, z. B. 180',
-      async (text) => {
-        const cm = Math.round(parseNum(text));
+      (text) => {
         if (!text.trim()) return;
+        const cm = Math.round(parseNum(text));
         if (cm < 100 || cm > 250) return Alert.alert('Ungültige Größe', 'Bitte zwischen 100 und 250 cm eingeben.');
-        try {
-          await api.put('/body', { heightCm: cm });
-          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-          invalidate();
-        } catch (e) {
-          Alert.alert('Speichern fehlgeschlagen', (e as Error).message);
-        }
+        saveBody({ heightCm: cm });
       },
       'plain-text',
       body.heightCm ? String(body.heightCm) : '',
       'number-pad',
     );
 
+  const editBirthYear = () =>
+    Alert.prompt(
+      'Geburtsjahr',
+      'Für den Grundumsatz, z. B. 1998',
+      (text) => {
+        if (!text.trim()) return;
+        const year = Math.round(parseNum(text));
+        const now = new Date().getFullYear();
+        if (year < now - 110 || year > now - 10) return Alert.alert('Ungültiges Jahr', 'Bitte ein Geburtsjahr wie 1998 eingeben.');
+        saveBody({ birthYear: year });
+      },
+      'plain-text',
+      profile && profile.birthYear ? String(profile.birthYear) : '',
+      'number-pad',
+    );
+
+  const editSex = () =>
+    Alert.alert('Geschlecht', 'Männer und Frauen haben bei gleicher Größe einen unterschiedlichen Grundumsatz.', [
+      { text: 'Männlich', onPress: () => saveBody({ sex: 'm' }) },
+      { text: 'Weiblich', onPress: () => saveBody({ sex: 'f' }) },
+      { text: 'Keine Angabe', onPress: () => saveBody({ sex: null }) },
+      { text: 'Abbrechen', style: 'cancel' },
+    ]);
+
+  const sexLabel = profile && profile.sex === 'm' ? 'Männlich' : profile && profile.sex === 'f' ? 'Weiblich' : 'Keine Angabe';
+
   return (
-    <Section title="Körper" footer="Größe und Gewicht fließen in die Kalorienberechnung aller Trainings ein (Grundumsatz nach Mifflin-St Jeor). Das Gewicht kommt aus deinen Einträgen in Statistik bzw. Apple Health.">
+    <Section title="Körper" footer="Größe, Gewicht, Alter und Geschlecht fließen in die Kalorienberechnung aller Trainings ein (Grundumsatz nach Mifflin-St Jeor). Das Gewicht kommt aus deinen Einträgen in Statistik bzw. Apple Health.">
       <List>
         <Row title="Größe" icon="ruler" value={body.heightCm ? `${body.heightCm} cm` : 'Nicht angegeben'} chevron onPress={editHeight} />
         <Row title="Gewicht" icon="scalemass.fill" value={hasWeight ? `${formatNumber(body.kg)} kg` : 'Noch kein Eintrag'} />
+        <Row
+          title="Alter"
+          icon="birthday.cake.fill"
+          value={profile && profile.birthYear ? `${new Date().getFullYear() - profile.birthYear} Jahre` : 'Nicht angegeben'}
+          chevron
+          onPress={editBirthYear}
+        />
+        <Row title="Geschlecht" icon="person.fill" value={sexLabel} chevron onPress={editSex} />
       </List>
     </Section>
   );

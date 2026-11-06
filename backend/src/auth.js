@@ -34,6 +34,11 @@ export async function deleteSession(token) {
   await query('DELETE FROM sessions WHERE token_hash = $1', [sha256(token)]);
 }
 
+/** After a password change: ends the user's other app sessions, keeps `token` and the Health shortcut. */
+export async function signOutOtherDevices(userId, token) {
+  await query("DELETE FROM sessions WHERE user_id = $1 AND kind = 'app' AND token_hash <> $2", [userId, sha256(token)]);
+}
+
 function bearer(request) {
   const header = request.headers.authorization ?? '';
   return header.startsWith('Bearer ') ? header.slice(7) : null;
