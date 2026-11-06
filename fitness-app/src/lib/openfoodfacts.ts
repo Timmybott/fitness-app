@@ -51,10 +51,69 @@ export async function fetchProductByBarcode(barcode: string): Promise<Food | nul
   return toFood({ ...json.product, code: json.product.code ?? barcode });
 }
 
-export async function searchProducts(query: string, signal?: AbortSignal): Promise<Food[]> {
-  const url = `${SEARCH_BASE}/search?page_size=25&langs=de&fields=${FIELDS}&q=${encodeURIComponent(query)}`;
+type Hit = OffProduct & { unique_scans_n?: number };
+
+async function searchHits(q: string, signal?: AbortSignal): Promise<Hit[]> {
+  const url = `${SEARCH_BASE}/search?page_size=50&langs=de&fields=${FIELDS},unique_scans_n&q=${encodeURIComponent(q)}`;
   const res = await fetch(url, { headers: HEADERS, signal });
   if (!res.ok) return [];
-  const json = (await res.json()) as { hits?: OffProduct[] };
-  return (json.hits ?? []).map(toFood).filter((f): f is Food => f != null && f.kcal > 0);
+  return ((await res.json()) as { hits?: Hit[] }).hits ?? [];
+}
+
+/** Lowercase, ß → ss, without spaces and punctuation, so "Kinder Riegel" matches "kinderriegel". */
+const compact = (s: string) => s.toLowerCase().replace(/ß/g, 'ss').replace(/[^\p{L}\p{N}]/gu, '');
+
+/**
+ * Drops entries whose values cannot be right: no nutrition data, more than 100 g of macros per 100 g,
+ * or calories that don't fit the macros (4 kcal/g protein and carbs, 9 kcal/g fat; generous margin
+ * for alcohol, fibre and sugar alcohols). Near-zero foods are only kept when the name says so.
+ */
+function plausible(f: Food, n: OffProduct['nutriments']) {
+  if (!n || n['proteins_100g'] === undefined || n['carbohydrates_100g'] === undefined || n['fat_100g'] === undefined) return false;
+  if (f.kcal > 900 || f.protein + f.carbs + f.fat > 101) return false;
+  const fromMacros = 4 * f.protein + 4 * f.carbs + 9 * f.fat;
+  if (fromMacros > 10 && Math.abs(fromMacros - f.kcal) > Math.max(25, f.kcal * 0.3) && f.kcal < fromMacros) return false;
+  // More kcal than the macros explain is fine up to alcohol (7 kcal/g, e.g. beer, liqueur).
+  if (f.kcal > fromMacros + Math.max(40, fromMacros * 0.6)) return false;
+  if (f.kcal < 5 && !/zero|light|null|0\s?%|wasser|water|tee|tea|kaffee|coffee|espresso|diät|diet|essig|gewürz|süßstoff|sweet/i.test(f.name)) return false;
+  return true;
+}
+
+// Letters a German product name would not contain (Spanish, French, Portuguese ... names).
+const FOREIGN = /[ñáàâãéèêíìîóòôõúùûçøåœ]/i;
+
+/**
+ * OpenFoodFacts search, cleaned up: products sold in Germany first, implausible entries removed,
+ * duplicates (same name and brand) merged. Products containing every search word come first, then
+ * a mix of OFF's relevance order and how often a product was scanned (a proxy for popularity).
+ */
+export async function searchProducts(query: string, signal?: AbortSignal): Promise<Food[]> {
+  let hits = await searchHits(`${query} countries_tags:"en:germany"`, signal);
+  if (hits.length < 10) hits = [...hits, ...(await searchHits(query, signal))];
+
+  const words = query.split(/\s+/).map(compact).filter(Boolean);
+  const seen = new Set<string>();
+  const ranked: { food: Food; score: number }[] = [];
+  hits.forEach((p, index) => {
+    const food = toFood(p);
+    if (!food || !plausible(food, p.nutriments)) return;
+    const key = compact(`${food.name}|${food.brand ?? ''}`);
+    if (seen.has(key) || (food.barcode && seen.has(food.barcode))) return;
+    seen.add(key);
+    if (food.barcode) seen.add(food.barcode);
+
+    const text = compact(`${food.name} ${food.brand ?? ''}`);
+    const missing = words.filter((w) => !text.includes(w)).length;
+    const scans = p.unique_scans_n ?? 0;
+    const score =
+      missing * 100 + // every search word should appear
+      (FOREIGN.test(food.name) && !p.product_name_de ? 30 : 0) +
+      index - // OFF relevance
+      Math.log2(1 + scans) * 4; // popularity
+    ranked.push({ food, score });
+  });
+  return ranked
+    .sort((a, b) => a.score - b.score)
+    .slice(0, 20)
+    .map((r) => r.food);
 }
