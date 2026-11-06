@@ -26,7 +26,7 @@ type Props = {
 /** Pick amount and meal for a food, preview its macros, and log it. */
 export function AmountForm({ food, date, initialMeal, onSaved, saveFood = true, drink = false }: Props) {
   const water = isPlainWater(food);
-  const unit = drink || water ? 'ml' : 'g';
+  const unit = drink || water || food.unit === 'ml' ? 'ml' : 'g';
   const [grams, setGrams] = useState(String(food.servingGrams ?? 100));
   const [meal, setMeal] = useState<Meal>(initialMeal);
   const [saving, setSaving] = useState(false);

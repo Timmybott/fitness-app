@@ -23,6 +23,46 @@ const foodSchema = {
   },
 };
 
+// German (Germany) search words → names used by the Swiss database.
+const REFERENCE_ALIASES = {
+  hähnchen: ['poulet'],
+  hühnchen: ['poulet'],
+  huhn: ['poulet'],
+  chicken: ['poulet'],
+  hähnchenbrust: ['poulet, brust'],
+  hühnerbrust: ['poulet, brust'],
+  pute: ['trute', 'truthahn', 'pute'],
+  putenbrust: ['trute', 'truthahn', 'pute'],
+  ei: ['hühnerei'],
+  eier: ['hühnerei'],
+  sahne: ['rahm'],
+  schlagsahne: ['rahm'],
+  paprika: ['peperoni', 'paprika'],
+  zucchini: ['zucchetti'],
+  feldsalat: ['nüsslisalat'],
+  pfifferling: ['eierschwamm'],
+  pfifferlinge: ['eierschwamm'],
+  möhre: ['karotte'],
+  möhren: ['karotte'],
+  karotten: ['karotte'],
+  eis: ['glace'],
+  speiseeis: ['glace'],
+  kartoffelpüree: ['kartoffelstock'],
+  püree: ['stock'],
+  hackfleisch: ['gehacktes', 'hackfleisch'],
+  brötchen: ['brötli', 'weggli', 'semmel'],
+  semmel: ['brötli', 'weggli', 'semmel'],
+  croissant: ['gipfeli'],
+  äpfel: ['apfel'],
+  bananen: ['banane'],
+  tomaten: ['tomate'],
+  kartoffeln: ['kartoffel'],
+  nudeln: ['teigwaren', 'nudeln'],
+  pasta: ['teigwaren'],
+  spaghetti: ['teigwaren', 'spaghetti'],
+  marille: ['aprikose'],
+};
+
 const FOOD_COLUMNS = 'id, name, brand, barcode, kcal, protein, carbs, fat, serving_grams AS "servingGrams"';
 const ENTRY_COLUMNS = 'id, date, meal, name, grams, kcal, protein, carbs, fat';
 
@@ -97,6 +137,38 @@ export default async function nutritionRoutes(app) {
     const { rows } = await query(
       `SELECT ${FOOD_COLUMNS} FROM foods WHERE user_id = $1 AND name ILIKE $2 ORDER BY last_used_at DESC LIMIT 30`,
       [req.userId, `%${q}%`],
+    );
+    return rows;
+  });
+
+  // Generic foods from the Swiss Food Composition Database (migration 008), shown as "Empfohlen" above
+  // OpenFoodFacts. Every search word must appear in the name or synonyms; ranked so "Apfel" gives
+  // "Apfel, roh" before "Apfelstrudel" and "Bratapfel". The barcode "blv:<id>" keeps a logged food
+  // from being saved to the user's list twice.
+  app.get('/foods/reference', async (req) => {
+    const q = typeof req.query.q === 'string' ? req.query.q.trim().toLowerCase().replace(/ß/g, 'ss').slice(0, 100) : '';
+    // Letters, digits and hyphens only, so the words are safe inside the regexes below.
+    const words = q.split(/[^\p{L}\p{N}-]+/u).filter((w) => w.length >= 2).slice(0, 5);
+    if (words.length === 0) return [];
+    // One regex alternation per word: German words also find the Swiss names ("Hähnchen" → "Poulet").
+    const patterns = words.map((w) => `(${(REFERENCE_ALIASES[w] ?? [w]).join('|')})`);
+    const { rows } = await query(
+      `SELECT 'blv:' || id AS barcode, name, NULL AS brand, unit, kcal::float, protein::float, carbs::float, fat::float
+       FROM reference_foods r
+       WHERE (SELECT bool_and(lower(r.name || ' ' || coalesce(r.synonyms, '')) ~ p) FROM unnest($1::text[]) p)
+       ORDER BY
+         CASE
+           WHEN lower(name) = $2 THEN 0
+           WHEN lower(name) ~ ('^' || $3 || '($|[ ,(])') THEN 1
+           WHEN lower(name) ~ ('^' || $3) THEN 2
+           WHEN lower(name) ~ ('(^|[ ,(-])' || $3) THEN 3
+           WHEN lower(name) ~ $3 THEN 4
+           ELSE 5
+         END,
+         (lower(name) LIKE '%roh%') DESC,
+         length(name)
+       LIMIT 8`,
+      [patterns, q, patterns[0]],
     );
     return rows;
   });

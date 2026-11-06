@@ -18,6 +18,8 @@ export type Food = Macros & {
   brand?: string | null;
   barcode?: string | null;
   servingGrams?: number | null;
+  /** Reference foods (Swiss database) for drinks are per 100 ml. */
+  unit?: 'g' | 'ml';
 };
 
 /** A logged food. Values are for the logged amount, not per 100 g. */
