@@ -70,6 +70,8 @@ export type Cardio = { id: number; date: string; type: string; minutes: number; 
 
 export type BodyWeight = { date: string; kg: number };
 
+export type BodyProfile = { heightCm: number | null };
+
 export type DailyNutrition = Macros & { date: string };
 
 export function scaleMacros(per100: Macros, grams: number): Macros {

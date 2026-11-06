@@ -10,7 +10,9 @@ import { WATER_COLOR } from '@/components/water-card';
 import { Colors, Spacing } from '@/constants/theme';
 import { api, API_URL, invalidate, useApi } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
-import { type Goals, type HealthToday } from '@/lib/types';
+import { useBody } from '@/lib/calories';
+import { formatNumber } from '@/lib/format';
+import { parseNum, type Goals, type HealthToday } from '@/lib/types';
 
 type NumberGoal = Exclude<keyof Goals, 'addBurned'>;
 
@@ -55,6 +57,8 @@ export default function ProfileScreen() {
       {/* Remount the form when saved goals change so the draft resets to them. */}
       {goals && <GoalsForm key={JSON.stringify(goals)} goals={goals} />}
 
+      <BodySection />
+
       <HealthSection />
 
       <Section title="Account" footer={`Server: ${API_URL}`}>
@@ -64,6 +68,41 @@ export default function ProfileScreen() {
         </List>
       </Section>
     </Screen>
+  );
+}
+
+function BodySection() {
+  const body = useBody();
+  const hasWeight = (useApi<unknown[]>('/weights?days=365').data ?? []).length > 0;
+
+  const editHeight = () =>
+    Alert.prompt(
+      'Körpergröße',
+      'In Zentimetern, z. B. 180',
+      async (text) => {
+        const cm = Math.round(parseNum(text));
+        if (!text.trim()) return;
+        if (cm < 100 || cm > 250) return Alert.alert('Ungültige Größe', 'Bitte zwischen 100 und 250 cm eingeben.');
+        try {
+          await api.put('/body', { heightCm: cm });
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          invalidate();
+        } catch (e) {
+          Alert.alert('Speichern fehlgeschlagen', (e as Error).message);
+        }
+      },
+      'plain-text',
+      body.heightCm ? String(body.heightCm) : '',
+      'number-pad',
+    );
+
+  return (
+    <Section title="Körper" footer="Größe und Gewicht fließen in die Kalorienberechnung aller Trainings ein (Grundumsatz nach Mifflin-St Jeor). Das Gewicht kommt aus deinen Einträgen in Statistik bzw. Apple Health.">
+      <List>
+        <Row title="Größe" icon="ruler" value={body.heightCm ? `${body.heightCm} cm` : 'Nicht angegeben'} chevron onPress={editHeight} />
+        <Row title="Gewicht" icon="scalemass.fill" value={hasWeight ? `${formatNumber(body.kg)} kg` : 'Noch kein Eintrag'} />
+      </List>
+    </Section>
   );
 }
 

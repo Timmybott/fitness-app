@@ -1,5 +1,5 @@
 import { useApi } from '@/lib/api';
-import { type BodyWeight } from '@/lib/types';
+import { type BodyProfile, type BodyWeight } from '@/lib/types';
 
 /**
  * Calorie estimates as ACTIVE energy (like Apple Health's "Aktive Energie"): what the training burns
@@ -27,11 +27,12 @@ export type Body = { kg: number; heightCm?: number | null };
 
 const DEFAULT_BODY_KG = 75;
 
-/** Latest body weight from the app (falls back to 75 kg). Height follows once the profile has it. */
+/** Latest body weight (falls back to 75 kg) and the height from the profile. */
 export function useBody(): Body {
   const weights = useApi<BodyWeight[]>('/weights?days=365').data;
+  const profile = useApi<BodyProfile>('/body').data;
   const last = weights ? weights.at(-1) : undefined;
-  return { kg: last ? last.kg : DEFAULT_BODY_KG };
+  return { kg: last ? last.kg : DEFAULT_BODY_KG, heightCm: profile ? profile.heightCm : null };
 }
 
 /** Resting energy in kcal per hour. */

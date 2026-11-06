@@ -32,4 +32,19 @@ export default async function bodyRoutes(app) {
     await query('DELETE FROM body_weights WHERE user_id = $1 AND date = $2', [req.userId, req.params.date]);
     return { ok: true };
   });
+
+  // Body data used for calorie estimates (weight itself comes from /weights).
+  app.get('/body', async (req) => {
+    const { rows } = await query('SELECT height_cm::float AS "heightCm" FROM users WHERE id = $1', [req.userId]);
+    return { heightCm: rows[0]?.heightCm ?? null };
+  });
+
+  app.put(
+    '/body',
+    { schema: { body: { type: 'object', required: ['heightCm'], properties: { heightCm: { type: ['number', 'null'], minimum: 100, maximum: 250 } } } } },
+    async (req) => {
+      await query('UPDATE users SET height_cm = $2 WHERE id = $1', [req.userId, req.body.heightCm]);
+      return { heightCm: req.body.heightCm };
+    },
+  );
 }
