@@ -29,7 +29,12 @@ function endOfDayIso(date) {
 export function lenientNumber(v) {
   if (v == null || v === '') return null;
   if (typeof v === 'number') return Number.isFinite(v) ? v : null;
-  const m = String(v).replace(/\s/g, '').replace(/\.(?=\d{3}(\D|$))/g, '').replace(',', '.').match(/-?\d+(\.\d+)?/);
+  let s = String(v).replace(/\s/g, '');
+  // Shortcuts writes a plain decimal point ("111.644", "371.80476952"), so a lone dot is a decimal point.
+  // With a comma it's German formatting ("1.116,44"); several dots are thousands separators ("1.116.000").
+  if (s.includes(',')) s = s.replace(/\./g, '').replace(',', '.');
+  else if ((s.match(/\./g) ?? []).length > 1) s = s.replace(/\./g, '');
+  const m = s.match(/-?\d+(\.\d+)?/);
   return m ? parseFloat(m[0]) : null;
 }
 
