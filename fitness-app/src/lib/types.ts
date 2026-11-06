@@ -41,7 +41,10 @@ export type User = { id: number; email: string; name: string };
 
 export type Exercise = { id: number; name: string; muscle: string; custom: boolean };
 
-export type TemplateExercise = { exerciseId: number; name: string; muscle: string; sets: number; reps: number };
+export type SetTarget = { weight: number; reps: number };
+
+/** `targets` holds planned kg/reps per set; templates saved before that only have sets × reps. */
+export type TemplateExercise = { exerciseId: number; name: string; muscle: string; sets: number; reps: number; targets?: SetTarget[] };
 
 export type Template = { id: number; name: string; exercises: TemplateExercise[] };
 

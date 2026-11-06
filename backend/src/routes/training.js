@@ -18,6 +18,16 @@ const templateBody = {
           exerciseId: { type: 'integer' },
           sets: { type: 'integer', minimum: 1, maximum: 20 },
           reps: { type: 'integer', minimum: 1, maximum: 200 },
+          // Planned weight/reps per set; weight 0 = no weight planned (e.g. pull-ups).
+          targets: {
+            type: 'array',
+            maxItems: 20,
+            items: {
+              type: 'object',
+              required: ['weight', 'reps'],
+              properties: { weight: { type: 'number', minimum: 0, maximum: 1000 }, reps: { type: 'integer', minimum: 0, maximum: 1000 } },
+            },
+          },
         },
       },
     },
@@ -42,8 +52,8 @@ async function writeTemplateExercises(db, templateId, exercises) {
   await db.query('DELETE FROM template_exercises WHERE template_id = $1', [templateId]);
   for (const [i, e] of exercises.entries()) {
     await db.query(
-      'INSERT INTO template_exercises (template_id, position, exercise_id, sets, reps) VALUES ($1, $2, $3, $4, $5)',
-      [templateId, i, e.exerciseId, e.sets, e.reps],
+      'INSERT INTO template_exercises (template_id, position, exercise_id, sets, reps, targets) VALUES ($1, $2, $3, $4, $5, $6)',
+      [templateId, i, e.exerciseId, e.sets, e.reps, JSON.stringify(e.targets ?? [])],
     );
   }
 }
@@ -74,7 +84,7 @@ export default async function trainingRoutes(app) {
   app.get('/templates', async (req) => {
     const { rows } = await query(
       `SELECT t.id, t.name,
-         COALESCE(json_agg(json_build_object('exerciseId', te.exercise_id, 'name', e.name, 'muscle', e.muscle, 'sets', te.sets, 'reps', te.reps)
+         COALESCE(json_agg(json_build_object('exerciseId', te.exercise_id, 'name', e.name, 'muscle', e.muscle, 'sets', te.sets, 'reps', te.reps, 'targets', te.targets)
            ORDER BY te.position) FILTER (WHERE te.exercise_id IS NOT NULL), '[]') AS exercises
        FROM templates t
        LEFT JOIN template_exercises te ON te.template_id = t.id

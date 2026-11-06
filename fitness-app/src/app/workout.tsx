@@ -2,12 +2,13 @@ import * as Haptics from 'expo-haptics';
 import { router, Stack } from 'expo-router';
 import { SymbolView } from 'expo-symbols';
 import { useEffect, useRef, useState } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppText } from '@/components/app-text';
 import { Card } from '@/components/card';
 import { List, Row } from '@/components/list';
+import { SetTable } from '@/components/set-table';
 import { Colors, Radius, Spacing } from '@/constants/theme';
 import { bridge } from '@/lib/bridge';
 import { useBodyWeight } from '@/lib/calories';
@@ -194,65 +195,15 @@ function ExerciseCard({ exercise, index, restSeconds }: { exercise: DraftExercis
         </Pressable>
       </View>
 
-      <View style={styles.setRow}>
-        <AppText type="caption" color={Colors.textTertiary} style={styles.colSet}>
-          SATZ
-        </AppText>
-        <AppText type="caption" color={Colors.textTertiary} style={styles.colLast}>
-          ZULETZT
-        </AppText>
-        <AppText type="caption" color={Colors.textTertiary} style={styles.colInput}>
-          KG
-        </AppText>
-        <AppText type="caption" color={Colors.textTertiary} style={styles.colInput}>
-          WDH
-        </AppText>
-        <View style={styles.colCheck} />
-      </View>
-
-      {exercise.sets.map((s, si) => {
-        const last = exercise.last[si];
-        // Empty fields fall back to last time's values (see effectiveSet), so show those as placeholders.
-        const hint = exercise.last[si] ?? exercise.last.at(-1);
-        return (
-          <View key={si} style={[styles.setRow, s.done && styles.setDone]}>
-            <AppText type="headline" style={styles.colSet}>
-              {si + 1}
-            </AppText>
-            <AppText type="caption" color={Colors.textSecondary} style={styles.colLast}>
-              {last ? `${last.weight} × ${last.reps}` : '–'}
-            </AppText>
-            <SetInput value={s.weight} placeholder={hint ? String(hint.weight) : '0'} onChange={(v) => setField(si, { weight: v })} decimal />
-            <SetInput value={s.reps} placeholder={hint ? String(hint.reps) : '0'} onChange={(v) => setField(si, { reps: v })} />
-            <Pressable onPress={() => toggleDone(si)} hitSlop={6} style={[styles.check, s.done && styles.checkDone]}>
-              <SymbolView name="checkmark" size={14} weight="bold" tintColor={s.done ? Colors.onAccent : Colors.textTertiary} />
-            </Pressable>
-          </View>
-        );
-      })}
-
-      <Pressable
-        onPress={() => updateExercise(index, (e) => ({ ...e, sets: [...e.sets, { weight: '', reps: '', done: false }] }))}
-        style={({ pressed }) => [styles.addSet, pressed && styles.dim]}>
-        <AppText type="caption" color={Colors.accent}>
-          + Satz
-        </AppText>
-      </Pressable>
+      <SetTable
+        mode="log"
+        sets={exercise.sets}
+        last={exercise.last}
+        onChange={setField}
+        onToggleDone={toggleDone}
+        onAddSet={() => updateExercise(index, (e) => ({ ...e, sets: [...e.sets, { weight: '', reps: '', done: false }] }))}
+      />
     </Card>
-  );
-}
-
-function SetInput({ value, placeholder, onChange, decimal }: { value: string; placeholder: string; onChange: (v: string) => void; decimal?: boolean }) {
-  return (
-    <TextInput
-      value={value}
-      onChangeText={onChange}
-      placeholder={placeholder}
-      placeholderTextColor={Colors.textTertiary}
-      keyboardType={decimal ? 'decimal-pad' : 'number-pad'}
-      selectTextOnFocus
-      style={[styles.colInput, styles.input]}
-    />
   );
 }
 
@@ -310,30 +261,6 @@ const styles = StyleSheet.create({
   stat: { alignItems: 'center' },
   card: { gap: Spacing.one },
   cardHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: Spacing.one },
-  setRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two, paddingVertical: 6, borderRadius: Radius.small },
-  setDone: { backgroundColor: Colors.accentDim },
-  colSet: { width: 36, textAlign: 'center' },
-  colLast: { flex: 1 },
-  colInput: { width: 64, textAlign: 'center' },
-  colCheck: { width: 32 },
-  input: {
-    height: 34,
-    borderRadius: Radius.small,
-    backgroundColor: Colors.cardElevated,
-    color: Colors.text,
-    fontSize: 17,
-    fontWeight: 600,
-  },
-  check: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: Colors.cardElevated,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  checkDone: { backgroundColor: Colors.accent },
-  addSet: { alignItems: 'center', paddingVertical: Spacing.two },
   rest: {
     position: 'absolute',
     left: Spacing.three,
