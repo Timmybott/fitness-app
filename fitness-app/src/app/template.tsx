@@ -5,28 +5,12 @@ import { useState } from 'react';
 import { Alert, Pressable, StyleSheet, TextInput, View } from 'react-native';
 
 import { AppText } from '@/components/app-text';
-import { Card } from '@/components/card';
 import { List, Row } from '@/components/list';
 import { Screen, Section } from '@/components/screen';
 import { Colors, Radius, Spacing } from '@/constants/theme';
 import { api, invalidate, useApi } from '@/lib/api';
 import { bridge } from '@/lib/bridge';
-import { parseNum, type Template, type TemplateExercise } from '@/lib/types';
-
-/** A set row as typed in the editor (strings, like the workout table). */
-type EditSet = { weight: string; reps: string };
-type EditExercise = { exerciseId: number; name: string; muscle: string; sets: EditSet[] };
-
-/** Template exercise → editable rows; old templates without per-set targets get sets × reps rows. */
-function toEdit(e: TemplateExercise): EditExercise {
-  const targets = e.targets && e.targets.length > 0 ? e.targets : Array.from({ length: e.sets }, () => ({ weight: 0, reps: e.reps }));
-  return {
-    exerciseId: e.exerciseId,
-    name: e.name,
-    muscle: e.muscle,
-    sets: targets.map((t) => ({ weight: t.weight ? String(t.weight).replace('.', ',') : '', reps: t.reps ? String(t.reps) : '' })),
-  };
-}
+import { type Template, type TemplateExercise } from '@/lib/types';
 
 export default function TemplateScreen() {
   const { id } = useLocalSearchParams<{ id?: string }>();
@@ -35,19 +19,21 @@ export default function TemplateScreen() {
 
   if (id && !existing) return null;
   // Keyed so the form initialises from the loaded template.
-  return <TemplateForm key={existing ? existing.id : 'new'} template={existing} />;
+  return <TemplateForm key={existing?.id ?? 'new'} template={existing} />;
 }
 
 function TemplateForm({ template }: { template?: Template }) {
-  // Opted out of the React Compiler: it dropped the optional chaining in initial state values
+  // Opted out of the React Compiler: it dropped the optional chaining in these initial values
   // ("Cannot read property 'exercises' of undefined" for a new template).
   'use no memo';
-  const [name, setName] = useState(template ? template.name : '');
-  const [exercises, setExercises] = useState<EditExercise[]>(template ? template.exercises.map(toEdit) : []);
+  const initialName = template ? template.name : '';
+  const initialExercises: TemplateExercise[] = template ? template.exercises : [];
+  const [name, setName] = useState(initialName);
+  const [exercises, setExercises] = useState<TemplateExercise[]>(initialExercises);
   const [saving, setSaving] = useState(false);
 
-  const updateExercise = (i: number, fn: (e: EditExercise) => EditExercise) =>
-    setExercises((list) => list.map((e, j) => (j === i ? fn(e) : e)));
+  const update = (i: number, patch: Partial<TemplateExercise>) =>
+    setExercises((list) => list.map((e, j) => (j === i ? { ...e, ...patch } : e)));
 
   const move = (i: number, dir: -1 | 1) =>
     setExercises((list) => {
@@ -59,9 +45,7 @@ function TemplateForm({ template }: { template?: Template }) {
     });
 
   const addExercise = () => {
-    bridge.onExercisePicked((e) =>
-      setExercises((l) => [...l, { exerciseId: e.id, name: e.name, muscle: e.muscle, sets: Array.from({ length: 3 }, () => ({ weight: '', reps: '10' })) }]),
-    );
+    bridge.onExercisePicked((e) => setExercises((l) => [...l, { exerciseId: e.id, name: e.name, muscle: e.muscle, sets: 3, reps: 10 }]));
     router.push('/exercise-picker');
   };
 
@@ -69,15 +53,8 @@ function TemplateForm({ template }: { template?: Template }) {
     if (saving) return;
     if (!name.trim()) return Alert.alert('Name fehlt', 'Gib der Vorlage einen Namen, z. B. Push.');
     if (exercises.length === 0) return Alert.alert('Keine Übungen', 'Füge mindestens eine Übung hinzu.');
-    if (exercises.some((e) => e.sets.length === 0)) return Alert.alert('Sätze fehlen', 'Jede Übung braucht mindestens einen Satz.');
     setSaving(true);
-    const body = {
-      name: name.trim(),
-      exercises: exercises.map((e) => {
-        const targets = e.sets.map((s) => ({ weight: parseNum(s.weight), reps: Math.round(parseNum(s.reps)) }));
-        return { exerciseId: e.exerciseId, sets: targets.length, reps: Math.max(1, targets[0].reps || 10), targets };
-      }),
-    };
+    const body = { name: name.trim(), exercises: exercises.map(({ exerciseId, sets, reps }) => ({ exerciseId, sets, reps })) };
     try {
       if (template) await api.put(`/templates/${template.id}`, body);
       else await api.post('/templates', body);
@@ -125,16 +102,27 @@ function TemplateForm({ template }: { template?: Template }) {
         style={styles.nameInput}
       />
 
-      <Section title="Übungen" footer="Kilo und Wiederholungen werden beim Start der Vorlage direkt eingetragen. Im Workout kannst du alles anpassen.">
-        {exercises.map((e, i) => (
-          <ExerciseEditor
-            key={`${e.exerciseId}-${i}`}
-            exercise={e}
-            onChange={(fn) => updateExercise(i, fn)}
-            onMove={(dir) => move(i, dir)}
-            onRemove={() => setExercises((l) => l.filter((_, j) => j !== i))}
-          />
-        ))}
+      <Section title="Übungen" footer="Sätze × Wiederholungen sind Vorgaben, im Workout kannst du alles anpassen.">
+        {exercises.length > 0 && (
+          <List>
+            {exercises.map((e, i) => (
+              <View key={`${e.exerciseId}-${i}`} style={styles.exerciseRow}>
+                <View style={styles.flex}>
+                  <AppText numberOfLines={1}>{e.name}</AppText>
+                  <View style={styles.steppers}>
+                    <Stepper value={e.sets} unit="Sätze" onChange={(v) => update(i, { sets: v })} max={20} />
+                    <Stepper value={e.reps} unit="Wdh" onChange={(v) => update(i, { reps: v })} max={100} />
+                  </View>
+                </View>
+                <View style={styles.rowActions}>
+                  <IconTap icon="chevron.up" onPress={() => move(i, -1)} />
+                  <IconTap icon="chevron.down" onPress={() => move(i, 1)} />
+                  <IconTap icon="minus.circle.fill" color={Colors.danger} onPress={() => setExercises((l) => l.filter((_, j) => j !== i))} />
+                </View>
+              </View>
+            ))}
+          </List>
+        )}
         <List>
           <Row title="Übung hinzufügen" icon="plus" onPress={addExercise} />
         </List>
@@ -145,106 +133,42 @@ function TemplateForm({ template }: { template?: Template }) {
           <Row title="Vorlage löschen" destructive onPress={remove} />
         </List>
       )}
+
+
     </Screen>
   );
 }
 
-/** Same table as in the workout: Satz | kg | Wdh, plus remove-row and "+ Satz". */
-function ExerciseEditor({
-  exercise,
-  onChange,
-  onMove,
-  onRemove,
-}: {
-  exercise: EditExercise;
-  onChange: (fn: (e: EditExercise) => EditExercise) => void;
-  onMove: (dir: -1 | 1) => void;
-  onRemove: () => void;
-}) {
-  const setField = (si: number, patch: Partial<EditSet>) =>
-    onChange((e) => ({ ...e, sets: e.sets.map((s, i) => (i === si ? { ...s, ...patch } : s)) }));
-
-  // A new set copies the previous one, which is what you usually want (e.g. 3 × 80 kg × 8).
-  const addSet = () => onChange((e) => ({ ...e, sets: [...e.sets, e.sets.at(-1) ?? { weight: '', reps: '10' }] }));
-
-  const menu = () =>
-    Alert.alert(exercise.name, undefined, [
-      { text: 'Nach oben', onPress: () => onMove(-1) },
-      { text: 'Nach unten', onPress: () => onMove(1) },
-      { text: 'Übung entfernen', style: 'destructive', onPress: onRemove },
-      { text: 'Abbrechen', style: 'cancel' },
-    ]);
-
+function Stepper({ value, unit, onChange, max }: { value: number; unit: string; onChange: (v: number) => void; max: number }) {
+  const step = (d: number) => {
+    Haptics.selectionAsync();
+    onChange(Math.min(max, Math.max(1, value + d)));
+  };
   return (
-    <Card style={styles.card}>
-      <View style={styles.cardHeader}>
-        <AppText type="headline" style={styles.flex}>
-          {exercise.name}
-        </AppText>
-        <Pressable onPress={menu} hitSlop={10}>
-          <SymbolView name="ellipsis" size={18} tintColor={Colors.textSecondary} />
-        </Pressable>
-      </View>
-
-      <View style={styles.setRow}>
-        <AppText type="caption" color={Colors.textTertiary} style={styles.colSet}>
-          SATZ
-        </AppText>
-        <View style={styles.flex} />
-        <AppText type="caption" color={Colors.textTertiary} style={styles.colInput}>
-          KG
-        </AppText>
-        <AppText type="caption" color={Colors.textTertiary} style={styles.colInput}>
-          WDH
-        </AppText>
-        <View style={styles.colAction} />
-      </View>
-
-      {exercise.sets.map((s, si) => (
-        <View key={si} style={styles.setRow}>
-          <AppText type="headline" style={styles.colSet}>
-            {si + 1}
-          </AppText>
-          <View style={styles.flex} />
-          <TextInput
-            value={s.weight}
-            onChangeText={(v) => setField(si, { weight: v })}
-            placeholder="–"
-            placeholderTextColor={Colors.textTertiary}
-            keyboardType="decimal-pad"
-            selectTextOnFocus
-            style={[styles.colInput, styles.input]}
-          />
-          <TextInput
-            value={s.reps}
-            onChangeText={(v) => setField(si, { reps: v })}
-            placeholder="0"
-            placeholderTextColor={Colors.textTertiary}
-            keyboardType="number-pad"
-            selectTextOnFocus
-            style={[styles.colInput, styles.input]}
-          />
-          <Pressable
-            onPress={() => onChange((e) => ({ ...e, sets: e.sets.filter((_, i) => i !== si) }))}
-            hitSlop={6}
-            style={styles.colAction}>
-            <SymbolView name="minus.circle.fill" size={20} tintColor={Colors.danger} />
-          </Pressable>
-        </View>
-      ))}
-
-      <Pressable onPress={addSet} style={({ pressed }) => [styles.addSet, pressed && styles.dim]}>
-        <AppText type="caption" color={Colors.accent}>
-          + Satz
-        </AppText>
+    <View style={styles.stepper}>
+      <Pressable onPress={() => step(-1)} hitSlop={6} style={styles.stepButton}>
+        <AppText type="headline">−</AppText>
       </Pressable>
-    </Card>
+      <AppText type="caption" style={styles.stepValue}>
+        {value} {unit}
+      </AppText>
+      <Pressable onPress={() => step(1)} hitSlop={6} style={styles.stepButton}>
+        <AppText type="headline">+</AppText>
+      </Pressable>
+    </View>
+  );
+}
+
+function IconTap({ icon, onPress, color = Colors.textSecondary }: { icon: 'chevron.up' | 'chevron.down' | 'minus.circle.fill'; onPress: () => void; color?: string }) {
+  return (
+    <Pressable onPress={onPress} hitSlop={6}>
+      <SymbolView name={icon} size={18} tintColor={color} />
+    </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
-  flex: { flex: 1 },
-  dim: { opacity: 0.5 },
+  flex: { flex: 1, gap: Spacing.two },
   nameInput: {
     backgroundColor: Colors.card,
     borderRadius: Radius.large,
@@ -255,19 +179,10 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: 600,
   },
-  card: { gap: Spacing.one },
-  cardHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: Spacing.one },
-  setRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two, paddingVertical: 6 },
-  colSet: { width: 36, textAlign: 'center' },
-  colInput: { width: 64, textAlign: 'center' },
-  colAction: { width: 32, alignItems: 'center' },
-  input: {
-    height: 34,
-    borderRadius: Radius.small,
-    backgroundColor: Colors.cardElevated,
-    color: Colors.text,
-    fontSize: 17,
-    fontWeight: 600,
-  },
-  addSet: { alignItems: 'center', paddingVertical: Spacing.two },
+  exerciseRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.three, padding: Spacing.three },
+  steppers: { flexDirection: 'row', gap: Spacing.two },
+  stepper: { flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.cardElevated, borderRadius: Radius.small },
+  stepButton: { paddingHorizontal: 10, paddingVertical: 2 },
+  stepValue: { minWidth: 58, textAlign: 'center' },
+  rowActions: { flexDirection: 'row', gap: Spacing.three, alignItems: 'center' },
 });
